@@ -4,15 +4,16 @@ Chat with Claude inside [Joplin](https://joplinapp.org/) — Claude can read, se
 
 [中文说明](README-CN.md)
 
-> **Status: early development.** No packaged release yet — build from source (see Development).
 
 ## Features
 
 - **Chat panel** — a side panel with streaming replies, tool-activity chips, and a header showing which note Claude is targeting (updates live as you switch notes)
 - **Full note access via tools** — list/search/read notes and notebooks, create notes and notebooks, update or delete notes
-- **Write confirmation** — every create/update/delete waits for your Approve/Decline in the panel (configurable)
+- **Write confirmation** — every create/update/delete waits for your Approve/Decline in the panel, with an "Always (this session)" option per request kind; an optional (dangerous, off by default) auto mode approves everything
+- **Dynamic tool permissions** — tools outside the allow-list (default: WebSearch/WebFetch allowed) trigger an Approve/Decline card instead of being silently denied
 - **Conversation history** — the clock button lists past conversations; loading one restores the transcript and resumes the Claude session
 - **Uses your Claude Code login** — no API key to manage; requests go through the `claude` CLI with your existing subscription
+- **i18n** — English, Simplified Chinese and Japanese (follows Joplin's locale setting)
 
 ## How it works
 
@@ -25,6 +26,13 @@ claude CLI  ── spawns ──►  MCP proxy  ── HTTP ──►  control s
 ```
 
 The MCP proxy is a zero-dependency script shipped inside the plugin. Claude Code launches it using **Joplin's own Electron runtime** (`ELECTRON_RUN_AS_NODE=1`), so users need no separate Node.js install. Every tool call is forwarded to the plugin's local control server, where the real work happens through the Joplin data API — including the user-confirmation step for writes.
+
+## Install
+
+1. Download `plugin.jpl` from the [latest release](https://github.com/lim0513/joplin-claude/releases/latest)
+2. In Joplin, go to **Tools → Options → Plugins**
+3. Click the gear icon and select **Install from file**
+4. Choose the downloaded `.jpl` file and restart Joplin
 
 ## Requirements
 
