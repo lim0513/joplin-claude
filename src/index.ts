@@ -29,6 +29,7 @@ interface PendingConfirm {
   resolve: (approved: boolean) => void;
   timer: any;
   key: string;
+  summary: string;
 }
 
 const SETTING_STRING = 2;
@@ -345,7 +346,7 @@ joplin.plugins.register({
 
     // ask_user tool: blocks the tool call until the user clicks an option
     // in the panel (or the 5-minute timeout fires).
-    const pendingQuestions: { [id: string]: { resolve: (v: string) => void; timer: any } } = {};
+    const pendingQuestions: { [id: string]: { resolve: (v: string) => void; timer: any; question: string; options: string[] } } = {};
     let questionSeq = 0;
 
     function requestAnswer(question: string, options: string[]): Promise<string> {
@@ -356,7 +357,7 @@ joplin.plugins.register({
           post({ name: 'questionGone', requestId: id });
           resolve('');
         }, 300000);
-        pendingQuestions[id] = { resolve, timer };
+        pendingQuestions[id] = { resolve, timer, question, options };
         post({ name: 'userQuestion', requestId: id, questions: [{ question, options }] });
       });
     }
@@ -384,7 +385,7 @@ joplin.plugins.register({
           post({ name: 'confirmGone', requestId: id });
           resolve(false);
         }, 120000);
-        pendingConfirms[id] = { resolve, timer, key };
+        pendingConfirms[id] = { resolve, timer, key, summary };
         post({ name: 'confirmWrite', requestId: id, summary });
       });
     }
@@ -863,6 +864,13 @@ joplin.plugins.register({
           post({ name: 'conversationLoaded', messages: currentConv.messages });
         }
         post({ name: 'busy', busy: !!child });
+        for (const cid of Object.keys(pendingConfirms)) {
+          post({ name: 'confirmWrite', requestId: cid, summary: pendingConfirms[cid].summary });
+        }
+        for (const qid of Object.keys(pendingQuestions)) {
+          const pq = pendingQuestions[qid];
+          post({ name: 'userQuestion', requestId: qid, questions: [{ question: pq.question, options: pq.options }] });
+        }
       } else if (msg.name === 'send') {
         const text = String(msg.text || '').trim();
         if (text) await runClaude(text);
