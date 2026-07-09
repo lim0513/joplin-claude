@@ -577,7 +577,16 @@ joplin.plugins.register({
 
     /* ---------- webview messages ---------- */
     await joplin.views.panels.onMessage(panel, async (msg: any) => {
-      if (msg.name === 'send') {
+      if (msg.name === 'ready') {
+        // The panel webview (re)loaded - Joplin recreates it on layout
+        // changes, hide/show, etc. Restore the full view state, otherwise a
+        // reload looks like a brand-new empty conversation.
+        await pushNoteContext();
+        if (currentConv && currentConv.messages && currentConv.messages.length) {
+          post({ name: 'conversationLoaded', messages: currentConv.messages });
+        }
+        post({ name: 'busy', busy: !!child });
+      } else if (msg.name === 'send') {
         const text = String(msg.text || '').trim();
         if (text) await runClaude(text);
       } else if (msg.name === 'stop') {

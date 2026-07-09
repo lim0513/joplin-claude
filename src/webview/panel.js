@@ -246,3 +246,7 @@ webviewApi.onMessage(function (msg) {
     }
   }
 });
+
+// Announce readiness so the backend can restore the current conversation
+// after any webview reload (layout change, hide/show, app resume).
+postMsg({ name: 'ready' });
