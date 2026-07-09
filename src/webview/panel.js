@@ -8,6 +8,19 @@ var _busy = false;
 
 function el(id) { return document.getElementById(id); }
 
+// i18n strings serialized by the backend into data-i18n on #claude-root
+function T(key) {
+  if (!window._i18n) {
+    var root = document.getElementById('claude-root');
+    if (root && root.dataset.i18n) {
+      try { window._i18n = JSON.parse(root.dataset.i18n); } catch (e) { window._i18n = {}; }
+    } else {
+      window._i18n = {};
+    }
+  }
+  return window._i18n[key] || key;
+}
+
 function escapeHtml(text) {
   return String(text == null ? '' : text)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -93,7 +106,7 @@ function setBusy(busy) {
       var div = document.createElement('div');
       div.id = 'cc-spinner';
       div.className = 'cc-spinner';
-      div.textContent = '⏳ Claude is working...';
+      div.textContent = T('working');
       m.appendChild(div);
       scrollToBottom();
     }
@@ -177,7 +190,7 @@ webviewApi.onMessage(function (msg) {
     var box = document.createElement('div');
     box.className = 'cc-hist-box';
     if (!m.items || !m.items.length) {
-      box.innerHTML = '<div class="cc-hist-empty">No history yet</div>';
+      box.innerHTML = '<div class="cc-hist-empty">' + escapeHtml(T('noHistory')) + '</div>';
     } else {
       for (var i = 0; i < m.items.length; i++) {
         var it = m.items[i];
@@ -188,7 +201,7 @@ webviewApi.onMessage(function (msg) {
         row.dataset.id = it.id;
         row.innerHTML = '<div class="cc-hist-main"><div class="cc-hist-title">' + escapeHtml(it.title) + '</div>'
           + '<div class="cc-hist-date">' + when + '</div></div>'
-          + '<button class="cc-hist-del" data-id="' + it.id + '" title="Delete">&#x2715;</button>';
+          + '<button class="cc-hist-del" data-id="' + it.id + '" title="' + escapeHtml(T('titleDelete')) + '">&#x2715;</button>';
         box.appendChild(row);
       }
     }
@@ -233,8 +246,8 @@ webviewApi.onMessage(function (msg) {
     card.className = 'cc-confirm-card';
     card.innerHTML = '<div class="cc-confirm-text">⚠ ' + escapeHtml(m.summary) + '</div>'
       + '<div class="cc-confirm-actions">'
-      + '<button class="cc-confirm-btn cc-approve" data-request-id="' + m.requestId + '" data-approved="1">Approve</button>'
-      + '<button class="cc-confirm-btn cc-decline" data-request-id="' + m.requestId + '" data-approved="0">Decline</button>'
+      + '<button class="cc-confirm-btn cc-approve" data-request-id="' + m.requestId + '" data-approved="1">' + escapeHtml(T('approve')) + '</button>'
+      + '<button class="cc-confirm-btn cc-decline" data-request-id="' + m.requestId + '" data-approved="0">' + escapeHtml(T('decline')) + '</button>'
       + '</div>';
     c.appendChild(card);
     scrollToBottom();

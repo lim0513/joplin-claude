@@ -9,6 +9,11 @@ const nodePath = require('path');
 const nodeChildProcess = require('child_process');
 
 import { MCP_PROXY_SOURCE } from './mcpSource';
+import { I18nStrings, getI18n, fmt } from './i18n';
+
+function escapeHtml(str: string): string {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 /* ======================== Types ======================== */
 
@@ -32,6 +37,9 @@ const SETTING_BOOL = 3;
 
 joplin.plugins.register({
   onStart: async function () {
+    const locale = (await joplin.settings.globalValue('locale')) || 'en_US';
+    const t: I18nStrings = getI18n(locale);
+
     /* ---------- settings ---------- */
     await joplin.settings.registerSection('joplinClaude', {
       label: 'Joplin Claude',
@@ -71,19 +79,19 @@ joplin.plugins.register({
     await joplin.views.panels.addScript(panel, 'webview/panel.css');
     await joplin.views.panels.addScript(panel, 'webview/panel.js');
     await joplin.views.panels.setHtml(panel, [
-      '<div id="claude-root">',
+      '<div id="claude-root" data-i18n="' + escapeHtml(JSON.stringify(t)) + '">',
       '  <div class="cc-header"><span class="cc-title">Claude</span>',
       '    <span id="cc-note-context" class="cc-note-context"></span>',
-      '    <button id="cc-history" title="History">&#x1F550;</button>',
-      '    <button id="cc-new" title="New conversation">&#x2795;</button>',
+      '    <button id="cc-history" title="' + escapeHtml(t.titleHistory) + '">&#x1F550;</button>',
+      '    <button id="cc-new" title="' + escapeHtml(t.titleNew) + '">&#x2795;</button>',
       '  </div>',
       '  <div id="cc-messages"></div>',
       '  <div id="cc-confirm"></div>',
       '  <div class="cc-input-row">',
-      '    <textarea id="cc-input" rows="3" placeholder="Ask Claude about your notes..."></textarea>',
+      '    <textarea id="cc-input" rows="3" placeholder="' + escapeHtml(t.inputPlaceholder) + '"></textarea>',
       '    <div class="cc-input-buttons">',
-      '      <button id="cc-send" title="Send">&#x27A4;</button>',
-      '      <button id="cc-stop" title="Stop" style="display:none;">&#x25A0;</button>',
+      '      <button id="cc-send" title="' + escapeHtml(t.titleSend) + '">&#x27A4;</button>',
+      '      <button id="cc-stop" title="' + escapeHtml(t.titleStop) + '" style="display:none;">&#x25A0;</button>',
       '    </div>',
       '  </div>',
       '</div>',
@@ -157,7 +165,7 @@ joplin.plugins.register({
         name: 'create_note',
         description: 'Create a new note in a notebook.',
         write: true,
-        confirmSummary: (a) => 'Create note "' + (a.title || '(untitled)') + '"',
+        confirmSummary: (a) => fmt(t.cCreateNote, { title: a.title || '(untitled)' }),
         inputSchema: {
           type: 'object',
           properties: {
@@ -172,7 +180,9 @@ joplin.plugins.register({
         name: 'update_note',
         description: 'Update an existing note. Only the provided fields are changed. To edit content, read the note first, then send the FULL new body.',
         write: true,
-        confirmSummary: (a) => 'Update note ' + a.note_id + (a.title ? ' (retitle to "' + a.title + '")' : '') + (a.body !== undefined ? ' [body: ' + String(a.body).length + ' chars]' : ''),
+        confirmSummary: (a) => fmt(t.cUpdateNote, { id: a.note_id })
+          + (a.title ? fmt(t.cRetitle, { title: a.title }) : '')
+          + (a.body !== undefined ? fmt(t.cBodyChars, { n: String(a.body).length }) : ''),
         inputSchema: {
           type: 'object',
           properties: {
@@ -188,7 +198,7 @@ joplin.plugins.register({
         name: 'create_notebook',
         description: 'Create a new notebook, optionally under a parent notebook.',
         write: true,
-        confirmSummary: (a) => 'Create notebook "' + (a.title || '') + '"',
+        confirmSummary: (a) => fmt(t.cCreateNotebook, { title: a.title || '' }),
         inputSchema: {
           type: 'object',
           properties: {
@@ -215,7 +225,7 @@ joplin.plugins.register({
         name: 'delete_note',
         description: 'Delete a note (moves it to trash).',
         write: true,
-        confirmSummary: (a) => 'DELETE note ' + a.note_id,
+        confirmSummary: (a) => fmt(t.cDeleteNote, { id: a.note_id }),
         inputSchema: {
           type: 'object',
           properties: { note_id: { type: 'string' } },
@@ -277,7 +287,7 @@ joplin.plugins.register({
           const raw = JSON.stringify(args.input || {});
           detail = raw.length > 160 ? raw.slice(0, 160) + '...' : raw;
         } catch (_) {}
-        const ok = await requestConfirm('Tool permission: ' + String(args.tool_name || '?') + (detail && detail !== '{}' ? ' ' + detail : ''));
+        const ok = await requestConfirm(fmt(t.cToolPermission, { name: String(args.tool_name || '?') }) + (detail && detail !== '{}' ? ' ' + detail : ''));
         return {
           result: JSON.stringify(ok
             ? { behavior: 'allow', updatedInput: args.input || {} }
@@ -312,7 +322,7 @@ joplin.plugins.register({
             if (sel) payload.parent_id = sel.id;
           }
           const created = await joplin.data.post(['notes'], null, payload);
-          post({ name: 'toolDone', text: 'Created note: ' + created.title });
+          post({ name: 'toolDone', text: fmt(t.dCreated, { title: created.title }) });
           return { result: { id: created.id, title: created.title } };
         }
         case 'update_note': {
@@ -322,7 +332,7 @@ joplin.plugins.register({
           if (args.notebook_id !== undefined) patch.parent_id = args.notebook_id;
           if (Object.keys(patch).length === 0) return { result: 'Nothing to update.', isError: true };
           await joplin.data.put(['notes', args.note_id], null, patch);
-          post({ name: 'toolDone', text: 'Updated note ' + args.note_id });
+          post({ name: 'toolDone', text: fmt(t.dUpdated, { id: args.note_id }) });
           return { result: 'Note updated.' };
         }
         case 'create_notebook': {
@@ -333,7 +343,7 @@ joplin.plugins.register({
         }
         case 'delete_note': {
           await joplin.data.delete(['notes', args.note_id]);
-          post({ name: 'toolDone', text: 'Deleted note ' + args.note_id });
+          post({ name: 'toolDone', text: fmt(t.dDeleted, { id: args.note_id }) });
           return { result: 'Note deleted.' };
         }
       }
@@ -465,7 +475,7 @@ joplin.plugins.register({
       if (child) {
         // Safety net (the webview also locks sending while busy). Reset the
         // webview's busy lock or it would stay disabled forever.
-        post({ name: 'error', text: 'A request is already running.' });
+        post({ name: 'error', text: t.errAlreadyRunning });
         post({ name: 'busy', busy: true });
         return;
       }
@@ -512,7 +522,7 @@ joplin.plugins.register({
           stdio: ['pipe', 'pipe', 'pipe'],
         });
       } catch (err: any) {
-        post({ name: 'error', text: 'Failed to start claude: ' + String(err && err.message ? err.message : err) });
+        post({ name: 'error', text: fmt(t.errStartFailed, { err: String(err && err.message ? err.message : err) }) });
         post({ name: 'busy', busy: false });
         child = null;
         return;
@@ -534,13 +544,13 @@ joplin.plugins.register({
       });
       child.stderr.on('data', (chunk: any) => { stderrBuf += chunk.toString('utf8'); });
       child.on('error', (err: any) => {
-        post({ name: 'error', text: 'claude process error: ' + String(err && err.message ? err.message : err) + '. Is the Claude Code CLI installed and on PATH? (Settings > Joplin Claude)' });
+        post({ name: 'error', text: fmt(t.errProcess, { err: String(err && err.message ? err.message : err) }) });
         post({ name: 'busy', busy: false });
         child = null;
       });
       child.on('close', (code: number) => {
         if (code !== 0 && stderrBuf.trim()) {
-          post({ name: 'error', text: 'claude exited with code ' + code + ': ' + stderrBuf.trim().slice(0, 500) });
+          post({ name: 'error', text: fmt(t.errExited, { code, err: stderrBuf.trim().slice(0, 500) }) });
         }
         post({ name: 'busy', busy: false });
         child = null;
