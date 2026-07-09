@@ -125,7 +125,14 @@ function sendCurrent() {
   // double-Enter cannot fire two requests.
   setBusy(true);
   input.value = '';
-  addBubble('cc-user', escapeHtml(text).replace(/\n/g, '<br>'));
+  var bubbleHtml = escapeHtml(text).replace(/\n/g, '<br>');
+  var chips = document.querySelectorAll('#cc-attachments .cc-att-chip');
+  if (chips.length) {
+    var names = [];
+    for (var ci = 0; ci < chips.length; ci++) names.push(escapeHtml(chips[ci].dataset.name || ''));
+    bubbleHtml += '<div class="cc-msg-atts">\uD83D\uDCCE ' + names.join(' \u00B7 ') + '</div>';
+  }
+  addBubble('cc-user', bubbleHtml);
   postMsg({ name: 'send', text: text });
 }
 
@@ -326,6 +333,7 @@ webviewApi.onMessage(function (msg) {
       var chip = document.createElement('span');
       chip.className = 'cc-att-chip';
       chip.dataset.id = m.id;
+      chip.dataset.name = m.fileName;
       chip.innerHTML = '\uD83D\uDCCE ' + escapeHtml(m.fileName)
         + ' <button class="cc-att-del" data-id="' + m.id + '">\u2715</button>';
       attWrap.appendChild(chip);

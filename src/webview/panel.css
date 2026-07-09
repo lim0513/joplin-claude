@@ -202,6 +202,16 @@
 .cc-hist-del:hover { background: rgba(220, 70, 70, 0.3); color: #fff; }
 .cc-hist-empty { padding: 16px; text-align: center; color: var(--joplin-color-faded, #999); }
 
+/* attachment names inside a sent user bubble */
+.cc-msg-atts {
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(127, 127, 127, 0.25);
+  font-size: 11px;
+  color: var(--joplin-color-faded, #bbb);
+  word-break: break-all;
+}
+
 /* ---- attachment chips ---- */
 #cc-attachments {
   flex-shrink: 0;
