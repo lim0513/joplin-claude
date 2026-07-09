@@ -22,7 +22,7 @@ module.exports = (env) => {
     },
     output: {
       filename: 'index.js',
-      path: path.resolve(__dirname, 'publish'),
+      path: path.resolve(__dirname, 'dist'),
     },
     plugins: [
       new CopyPlugin({

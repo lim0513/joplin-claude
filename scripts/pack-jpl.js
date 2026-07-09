@@ -2,8 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
+const distDir = path.resolve(__dirname, '..', 'dist');
 const publishDir = path.resolve(__dirname, '..', 'publish');
 const outPath = path.join(publishDir, 'plugin.jpl');
+
+// webpack builds into dist/ (which Joplin's "Development plugins" loader
+// expects at <path>/dist). publish/ is a copy of dist plus plugin.jpl, and
+// is what ships to npm.
+fs.rmSync(publishDir, { recursive: true, force: true });
+fs.cpSync(distDir, publishDir, { recursive: true });
 
 // GUARD: the outer manifests and the manifest packed INTO the .jpl must all
 // agree, otherwise Joplin enters an endless update loop (see CLAUDE.md,
