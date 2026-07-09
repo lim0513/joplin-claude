@@ -32,6 +32,8 @@ export const i18nData: { [locale: string]: I18nStrings } = {
     dDeleted: 'Deleted note {id}',
     autoApproved: '⚠ Auto-approved: {s}',
     alwaysAllow: 'Always (this session)',
+    titleAttach: 'Attach files',
+    errAttachTooBig: 'Attachment too large (max 8 MB): {name}',
     sessionApproved: '✓ Allowed by session rule: {s}',
   },
   'zh_CN': {
@@ -61,6 +63,8 @@ export const i18nData: { [locale: string]: I18nStrings } = {
     dDeleted: '已删除笔记 {id}',
     autoApproved: '⚠ 已自动批准：{s}',
     alwaysAllow: '本会话内一直允许',
+    titleAttach: '添加附件',
+    errAttachTooBig: '附件过大（上限 8 MB）：{name}',
     sessionApproved: '✓ 按会话授权放行:{s}',
   },
   'ja_JP': {
@@ -90,6 +94,8 @@ export const i18nData: { [locale: string]: I18nStrings } = {
     dDeleted: 'ノート {id} を削除しました',
     autoApproved: '⚠ 自動許可：{s}',
     alwaysAllow: 'このセッションでは常に許可',
+    titleAttach: 'ファイルを添付',
+    errAttachTooBig: '添付ファイルが大きすぎます（上限 8 MB）：{name}',
     sessionApproved: '✓ セッション許可で実行:{s}',
   },
 };

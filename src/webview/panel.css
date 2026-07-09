@@ -194,6 +194,37 @@
 .cc-hist-del:hover { background: rgba(220, 70, 70, 0.3); color: #fff; }
 .cc-hist-empty { padding: 16px; text-align: center; color: var(--joplin-color-faded, #999); }
 
+/* ---- attachment chips ---- */
+#cc-attachments {
+  flex-shrink: 0;
+  padding: 0 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+#cc-attachments:not(:empty) { padding-bottom: 6px; }
+.cc-att-chip {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(127, 127, 127, 0.18);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-att-del {
+  background: transparent;
+  border: none;
+  color: var(--joplin-color-faded, #999);
+  cursor: pointer;
+  padding: 0 2px;
+}
+.cc-att-del:hover { color: #e66; }
+
 .cc-input-row {
   display: flex;
   gap: 6px;

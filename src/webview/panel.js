@@ -129,10 +129,55 @@ function sendCurrent() {
   postMsg({ name: 'send', text: text });
 }
 
+// ---- conversation attachments ----
+function sendFileToBackend(file) {
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) {
+    addBubble('cc-error', escapeHtml(file.name) + ' (>8MB)');
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function () {
+    var result = String(reader.result || '');
+    var comma = result.indexOf(',');
+    postMsg({ name: 'attachFile', fileName: file.name, data: comma >= 0 ? result.slice(comma + 1) : result });
+  };
+  reader.readAsDataURL(file);
+}
+
+function handleFiles(fileList) {
+  for (var i = 0; i < fileList.length && i < 5; i++) sendFileToBackend(fileList[i]);
+}
+
+document.addEventListener('dragover', function (e) { e.preventDefault(); });
+document.addEventListener('drop', function (e) {
+  e.preventDefault();
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+    handleFiles(e.dataTransfer.files);
+  }
+});
+
+document.addEventListener('change', function (e) {
+  if (e.target && e.target.id === 'cc-file' && e.target.files) {
+    handleFiles(e.target.files);
+    e.target.value = '';
+  }
+});
+
 document.addEventListener('click', function (e) {
   var t = e.target;
   if (!t) return;
   if (t.id === 'cc-send') { sendCurrent(); return; }
+  if (t.id === 'cc-attach') {
+    var fi = el('cc-file');
+    if (fi) fi.click();
+    return;
+  }
+  var attDel = t.closest ? t.closest('.cc-att-del') : null;
+  if (attDel) {
+    postMsg({ name: 'removeAttachment', id: attDel.dataset.id });
+    return;
+  }
   if (t.id === 'cc-stop') { postMsg({ name: 'stop' }); return; }
   if (t.id === 'cc-history') {
     var ov = el('cc-history-overlay');
@@ -250,6 +295,22 @@ webviewApi.onMessage(function (msg) {
       else addBubble('cc-error', escapeHtml(one.text));
     }
     setBusy(false);
+  } else if (m.name === 'attached') {
+    var attWrap = el('cc-attachments');
+    if (attWrap) {
+      var chip = document.createElement('span');
+      chip.className = 'cc-att-chip';
+      chip.dataset.id = m.id;
+      chip.innerHTML = '\uD83D\uDCCE ' + escapeHtml(m.fileName)
+        + ' <button class="cc-att-del" data-id="' + m.id + '">\u2715</button>';
+      attWrap.appendChild(chip);
+    }
+  } else if (m.name === 'attachmentRemoved') {
+    var gone = document.querySelector('.cc-att-chip[data-id="' + m.id + '"]');
+    if (gone) gone.remove();
+  } else if (m.name === 'attachmentsCleared') {
+    var wrap2 = el('cc-attachments');
+    if (wrap2) wrap2.innerHTML = '';
   } else if (m.name === 'noteContext') {
     var nc = el('cc-note-context');
     if (nc) nc.textContent = m.title ? '\uD83D\uDCC4 ' + m.title : '';

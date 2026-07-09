@@ -93,9 +93,12 @@ joplin.plugins.register({
       '  </div>',
       '  <div id="cc-messages"></div>',
       '  <div id="cc-confirm"></div>',
+      '  <div id="cc-attachments"></div>',
       '  <div class="cc-input-row">',
       '    <textarea id="cc-input" rows="3" placeholder="' + escapeHtml(t.inputPlaceholder) + '"></textarea>',
       '    <div class="cc-input-buttons">',
+      '      <button id="cc-attach" title="' + escapeHtml(t.titleAttach) + '">&#x1F4CE;</button>',
+      '      <input id="cc-file" type="file" multiple style="display:none;" />',
       '      <button id="cc-send" title="' + escapeHtml(t.titleSend) + '">&#x27A4;</button>',
       '      <button id="cc-stop" title="' + escapeHtml(t.titleStop) + '" style="display:none;">&#x25A0;</button>',
       '    </div>',
@@ -470,6 +473,21 @@ joplin.plugins.register({
       saveHistory();
     }
 
+    /* ---------- conversation attachments ---------- */
+    const attachmentsDir = nodePath.join(dataDir, 'attachments');
+    try {
+      nodeFs.mkdirSync(attachmentsDir, { recursive: true });
+      // Drop attachment files older than 7 days.
+      const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+      for (const f of nodeFs.readdirSync(attachmentsDir)) {
+        const p = nodePath.join(attachmentsDir, f);
+        try { if (nodeFs.statSync(p).mtimeMs < cutoff) nodeFs.unlinkSync(p); } catch (_) {}
+      }
+    } catch (_) {}
+
+    let pendingAttachments: { id: string; fileName: string; filePath: string }[] = [];
+    let attachSeq = 0;
+
     /* ---------- claude process management ---------- */
     let child: any = null;
     let sessionId: string = '';
@@ -537,6 +555,12 @@ joplin.plugins.register({
       if (model) { args.push('--model', winQuote(String(model))); }
       if (extraArgs) { args.push(extraArgs); }
 
+      if (pendingAttachments.length) {
+        const attachmentLines = pendingAttachments.map((a) => '- ' + a.filePath);
+        prompt += '\n\n[The user attached the following files. Use the Read tool to view them:]\n' + attachmentLines.join('\n');
+        pendingAttachments = [];
+        post({ name: 'attachmentsCleared' });
+      }
       record('user', prompt);
       post({ name: 'busy', busy: true });
       try {
@@ -666,6 +690,29 @@ joplin.plugins.register({
           .sort((a, b) => (b.updated || 0) - (a.updated || 0))
           .map((c) => ({ id: c.id, title: c.title || '(empty)', updated: c.updated }));
         post({ name: 'historyList', items });
+      } else if (msg.name === 'attachFile') {
+        try {
+          const raw = Buffer.from(String(msg.data || ''), 'base64');
+          if (raw.length > 8 * 1024 * 1024) {
+            post({ name: 'error', text: fmt(t.errAttachTooBig, { name: msg.fileName }) });
+            return;
+          }
+          const safeName = String(msg.fileName || 'file').replace(/[^\w.\-\u4e00-\u9fff\u3040-\u30ff]+/g, '_').slice(0, 80);
+          const id = 'a' + (++attachSeq) + '-' + Date.now();
+          const filePath = nodePath.join(attachmentsDir, id + '-' + safeName);
+          nodeFs.writeFileSync(filePath, raw);
+          pendingAttachments.push({ id, fileName: safeName, filePath });
+          post({ name: 'attached', id, fileName: safeName });
+        } catch (err: any) {
+          post({ name: 'error', text: String(err && err.message ? err.message : err) });
+        }
+      } else if (msg.name === 'removeAttachment') {
+        const found = pendingAttachments.find((a) => a.id === msg.id);
+        if (found) {
+          try { nodeFs.unlinkSync(found.filePath); } catch (_) {}
+          pendingAttachments = pendingAttachments.filter((a) => a.id !== msg.id);
+        }
+        post({ name: 'attachmentRemoved', id: msg.id });
       } else if (msg.name === 'confirmResult') {
         const pending = pendingConfirms[msg.requestId];
         if (pending) {
