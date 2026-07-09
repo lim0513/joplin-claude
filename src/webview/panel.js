@@ -32,13 +32,24 @@ function scrollToBottom() {
   if (m) m.scrollTop = m.scrollHeight;
 }
 
+// Append keeping the working-spinner pinned as the LAST element - without
+// this, anything added while busy (the user's own bubble, streaming replies)
+// lands BELOW the spinner.
+function appendToMessages(node) {
+  var m = el('cc-messages');
+  if (!m) return;
+  var spinner = document.getElementById('cc-spinner');
+  if (spinner && spinner.parentElement === m) m.insertBefore(node, spinner);
+  else m.appendChild(node);
+}
+
 function addBubble(cls, html) {
   var m = el('cc-messages');
   if (!m) return null;
   var div = document.createElement('div');
   div.className = 'cc-msg ' + cls;
   div.innerHTML = html;
-  m.appendChild(div);
+  appendToMessages(div);
   scrollToBottom();
   return div;
 }
@@ -47,6 +58,9 @@ function addToolChip(text) {
   var m = el('cc-messages');
   if (!m) return;
   var last = m.lastElementChild;
+  if (last && last.id === 'cc-spinner' && last.previousElementSibling) {
+    last = last.previousElementSibling;
+  }
   if (last && last.classList.contains('cc-tools')) {
     var chip = document.createElement('span');
     chip.className = 'cc-tool-chip';
@@ -59,7 +73,7 @@ function addToolChip(text) {
     chip2.className = 'cc-tool-chip';
     chip2.textContent = text;
     div.appendChild(chip2);
-    m.appendChild(div);
+    appendToMessages(div);
   }
   scrollToBottom();
 }
