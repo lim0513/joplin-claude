@@ -70,9 +70,9 @@ joplin.plugins.register({
         description: 'DANGER: when enabled, EVERY request is approved automatically without asking - note edits and deletions, AND any tool Claude asks for (potentially including shell commands). Claude gets free rein over your notes. Equivalent to running Claude Code with permissions disabled. Leave OFF unless you fully accept the risk.',
       },
       'extraAllowedTools': {
-        section: 'joplinClaude', type: SETTING_STRING, value: 'WebSearch,WebFetch', public: true, advanced: true,
+        section: 'joplinClaude', type: SETTING_STRING, value: 'WebSearch,WebFetch,Read', public: true, advanced: true,
         label: 'Additional allowed Claude tools',
-        description: 'Comma-separated Claude Code tools to auto-allow besides the Joplin note tools. Tools NOT listed here trigger an Approve/Decline card in the chat panel. Default: WebSearch,WebFetch.',
+        description: 'Comma-separated Claude Code tools to auto-allow besides the Joplin note tools. Tools NOT listed here trigger an Approve/Decline card in the chat panel. Default: WebSearch,WebFetch,Read (Read is needed to view chat and note attachments without prompting).',
       },
       'extraCliArgs': {
         section: 'joplinClaude', type: SETTING_STRING, value: '', public: true, advanced: true,
