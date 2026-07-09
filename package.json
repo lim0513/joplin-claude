@@ -1,0 +1,25 @@
+{
+  "name": "joplin-plugin-claude",
+  "version": "0.1.0",
+  "description": "Chat with Claude inside Joplin - Claude can read, search, create and edit your notes (powered by your local Claude Code CLI)",
+  "author": "lim0513",
+  "homepage": "https://github.com/lim0513/joplin-claude",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lim0513/joplin-claude.git"
+  },
+  "scripts": {
+    "dist": "webpack --env production && node scripts/pack-jpl.js",
+    "dev": "webpack --watch"
+  },
+  "keywords": ["joplin-plugin", "joplin", "claude", "ai", "assistant", "chat"],
+  "license": "MIT",
+  "devDependencies": {
+    "copy-webpack-plugin": "^11.0.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.3",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4"
+  },
+  "files": ["publish"]
+}

@@ -1,0 +1,472 @@
+// Joplin plugin runtime provides `joplin` as a global variable at runtime.
+// Do NOT `import joplin from 'api'` (webpack emits require("api") which the
+// plugin loader cannot resolve - same convention as joplin-explorer).
+declare const joplin: any;
+
+const nodeHttp = require('http');
+const nodeFs = require('fs');
+const nodePath = require('path');
+const nodeChildProcess = require('child_process');
+
+import { MCP_PROXY_SOURCE } from './mcpSource';
+
+/* ======================== Types ======================== */
+
+interface ToolDef {
+  name: string;
+  description: string;
+  inputSchema: any;
+  write?: boolean;
+  confirmSummary?: (args: any) => string;
+}
+
+interface PendingConfirm {
+  resolve: (approved: boolean) => void;
+  timer: any;
+}
+
+const SETTING_STRING = 2;
+const SETTING_BOOL = 3;
+
+/* ======================== Plugin ======================== */
+
+joplin.plugins.register({
+  onStart: async function () {
+    /* ---------- settings ---------- */
+    await joplin.settings.registerSection('joplinClaude', {
+      label: 'Joplin Claude',
+      iconName: 'fas fa-robot',
+    });
+    await joplin.settings.registerSettings({
+      'claudePath': {
+        section: 'joplinClaude', type: SETTING_STRING, value: 'claude', public: true,
+        label: 'Claude Code CLI command',
+        description: 'Command or full path of the claude CLI. Default: claude (must be on PATH).',
+      },
+      'claudeModel': {
+        section: 'joplinClaude', type: SETTING_STRING, value: '', public: true,
+        label: 'Model (optional)',
+        description: 'Passed as --model. Leave empty to use the CLI default.',
+      },
+      'requireWriteConfirm': {
+        section: 'joplinClaude', type: SETTING_BOOL, value: true, public: true,
+        label: 'Confirm before Claude modifies notes',
+        description: 'Create/update/delete operations wait for your approval in the chat panel.',
+      },
+      'extraCliArgs': {
+        section: 'joplinClaude', type: SETTING_STRING, value: '', public: true, advanced: true,
+        label: 'Extra CLI arguments',
+        description: 'Advanced: appended verbatim to the claude command line.',
+      },
+    });
+
+    /* ---------- panel ---------- */
+    const panel = await joplin.views.panels.create('claudeChatPanel');
+    await joplin.views.panels.addScript(panel, 'webview/panel.css');
+    await joplin.views.panels.addScript(panel, 'webview/panel.js');
+    await joplin.views.panels.setHtml(panel, [
+      '<div id="claude-root">',
+      '  <div class="cc-header"><span class="cc-title">Claude</span>',
+      '    <button id="cc-new" title="New conversation">&#x2795;</button>',
+      '  </div>',
+      '  <div id="cc-messages"></div>',
+      '  <div id="cc-confirm"></div>',
+      '  <div class="cc-input-row">',
+      '    <textarea id="cc-input" rows="3" placeholder="Ask Claude about your notes..."></textarea>',
+      '    <div class="cc-input-buttons">',
+      '      <button id="cc-send" title="Send">&#x27A4;</button>',
+      '      <button id="cc-stop" title="Stop" style="display:none;">&#x25A0;</button>',
+      '    </div>',
+      '  </div>',
+      '</div>',
+    ].join(''));
+    await joplin.views.panels.show(panel, false);
+
+    await joplin.commands.register({
+      name: 'toggleClaudePanel',
+      label: 'Toggle Claude panel',
+      iconName: 'fas fa-robot',
+      execute: async () => {
+        const visible = await joplin.views.panels.visible(panel);
+        await joplin.views.panels.show(panel, !visible);
+      },
+    });
+    await joplin.views.toolbarButtons.create('claudePanelButton', 'toggleClaudePanel', 'noteToolbar');
+
+    function post(msg: any): void {
+      joplin.views.panels.postMessage(panel, msg);
+    }
+
+    /* ---------- tool definitions ---------- */
+    const toolDefs: ToolDef[] = [
+      {
+        name: 'list_notebooks',
+        description: 'List all notebooks (folders) with id, title and parent_id.',
+        inputSchema: { type: 'object', properties: {}, required: [] },
+      },
+      {
+        name: 'list_notes',
+        description: 'List notes in a notebook (id + title, most recently updated first, max 200).',
+        inputSchema: {
+          type: 'object',
+          properties: { notebook_id: { type: 'string', description: 'Notebook id' } },
+          required: ['notebook_id'],
+        },
+      },
+      {
+        name: 'search_notes',
+        description: 'Full-text search across all notes. Returns id, title and parent_id (max 50).',
+        inputSchema: {
+          type: 'object',
+          properties: { query: { type: 'string', description: 'Search query' } },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'read_note',
+        description: 'Read a note: title, markdown body, notebook id.',
+        inputSchema: {
+          type: 'object',
+          properties: { note_id: { type: 'string' } },
+          required: ['note_id'],
+        },
+      },
+      {
+        name: 'get_selected_note',
+        description: 'Get the note currently open in the Joplin editor (id, title, body). Use this when the user says "this note".',
+        inputSchema: { type: 'object', properties: {}, required: [] },
+      },
+      {
+        name: 'create_note',
+        description: 'Create a new note in a notebook.',
+        write: true,
+        confirmSummary: (a) => 'Create note "' + (a.title || '(untitled)') + '"',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            body: { type: 'string', description: 'Markdown body' },
+            notebook_id: { type: 'string', description: 'Target notebook id (optional; defaults to the currently selected notebook)' },
+          },
+          required: ['title', 'body'],
+        },
+      },
+      {
+        name: 'update_note',
+        description: 'Update an existing note. Only the provided fields are changed. To edit content, read the note first, then send the FULL new body.',
+        write: true,
+        confirmSummary: (a) => 'Update note ' + a.note_id + (a.title ? ' (retitle to "' + a.title + '")' : '') + (a.body !== undefined ? ' [body: ' + String(a.body).length + ' chars]' : ''),
+        inputSchema: {
+          type: 'object',
+          properties: {
+            note_id: { type: 'string' },
+            title: { type: 'string' },
+            body: { type: 'string', description: 'Full replacement markdown body' },
+            notebook_id: { type: 'string', description: 'Move to this notebook' },
+          },
+          required: ['note_id'],
+        },
+      },
+      {
+        name: 'create_notebook',
+        description: 'Create a new notebook, optionally under a parent notebook.',
+        write: true,
+        confirmSummary: (a) => 'Create notebook "' + (a.title || '') + '"',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            parent_id: { type: 'string', description: 'Parent notebook id (optional)' },
+          },
+          required: ['title'],
+        },
+      },
+      {
+        name: 'delete_note',
+        description: 'Delete a note (moves it to trash).',
+        write: true,
+        confirmSummary: (a) => 'DELETE note ' + a.note_id,
+        inputSchema: {
+          type: 'object',
+          properties: { note_id: { type: 'string' } },
+          required: ['note_id'],
+        },
+      },
+    ];
+
+    /* ---------- write confirmation ---------- */
+    const pendingConfirms: { [id: string]: PendingConfirm } = {};
+    let confirmSeq = 0;
+
+    function requestConfirm(summary: string): Promise<boolean> {
+      return new Promise((resolve) => {
+        const id = String(++confirmSeq);
+        const timer = setTimeout(() => {
+          delete pendingConfirms[id];
+          post({ name: 'confirmGone', requestId: id });
+          resolve(false);
+        }, 120000);
+        pendingConfirms[id] = { resolve, timer };
+        post({ name: 'confirmWrite', requestId: id, summary });
+      });
+    }
+
+    /* ---------- tool execution ---------- */
+    async function getAllPaginated(path: string[], fields: string[], extra: any = {}): Promise<any[]> {
+      let items: any[] = [];
+      let page = 1;
+      let hasMore = true;
+      while (hasMore && items.length < 1000) {
+        const r = await joplin.data.get(path, { fields, page, limit: 100, ...extra });
+        items = items.concat(r.items);
+        hasMore = r.has_more;
+        page++;
+      }
+      return items;
+    }
+
+    async function executeTool(name: string, args: any): Promise<{ result: any; isError?: boolean }> {
+      const def = toolDefs.find((d) => d.name === name);
+      if (!def) return { result: 'Unknown tool: ' + name, isError: true };
+
+      if (def.write) {
+        const needConfirm = await joplin.settings.value('requireWriteConfirm');
+        if (needConfirm !== false) {
+          const summary = def.confirmSummary ? def.confirmSummary(args) : name;
+          const ok = await requestConfirm(summary);
+          if (!ok) return { result: 'The user DECLINED this operation. Do not retry it; ask the user what they would like instead.', isError: true };
+        }
+      }
+
+      switch (name) {
+        case 'list_notebooks':
+          return { result: await getAllPaginated(['folders'], ['id', 'title', 'parent_id']) };
+        case 'list_notes': {
+          const items = await getAllPaginated(['folders', args.notebook_id, 'notes'], ['id', 'title', 'user_updated_time']);
+          items.sort((a, b) => (b.user_updated_time || 0) - (a.user_updated_time || 0));
+          return { result: items.slice(0, 200).map((n) => ({ id: n.id, title: n.title })) };
+        }
+        case 'search_notes': {
+          const r = await joplin.data.get(['search'], { query: args.query, fields: ['id', 'title', 'parent_id'], limit: 50 });
+          return { result: r.items };
+        }
+        case 'read_note':
+          return { result: await joplin.data.get(['notes', args.note_id], { fields: ['id', 'title', 'body', 'parent_id'] }) };
+        case 'get_selected_note': {
+          const n = await joplin.workspace.selectedNote();
+          if (!n) return { result: 'No note is currently selected.', isError: true };
+          return { result: { id: n.id, title: n.title, body: n.body, parent_id: n.parent_id } };
+        }
+        case 'create_note': {
+          const payload: any = { title: args.title, body: args.body };
+          if (args.notebook_id) payload.parent_id = args.notebook_id;
+          else {
+            const sel = await joplin.workspace.selectedFolder();
+            if (sel) payload.parent_id = sel.id;
+          }
+          const created = await joplin.data.post(['notes'], null, payload);
+          post({ name: 'toolDone', text: 'Created note: ' + created.title });
+          return { result: { id: created.id, title: created.title } };
+        }
+        case 'update_note': {
+          const patch: any = {};
+          if (args.title !== undefined) patch.title = args.title;
+          if (args.body !== undefined) patch.body = args.body;
+          if (args.notebook_id !== undefined) patch.parent_id = args.notebook_id;
+          if (Object.keys(patch).length === 0) return { result: 'Nothing to update.', isError: true };
+          await joplin.data.put(['notes', args.note_id], null, patch);
+          post({ name: 'toolDone', text: 'Updated note ' + args.note_id });
+          return { result: 'Note updated.' };
+        }
+        case 'create_notebook': {
+          const payload: any = { title: args.title };
+          if (args.parent_id) payload.parent_id = args.parent_id;
+          const created = await joplin.data.post(['folders'], null, payload);
+          return { result: { id: created.id, title: created.title } };
+        }
+        case 'delete_note': {
+          await joplin.data.delete(['notes', args.note_id]);
+          post({ name: 'toolDone', text: 'Deleted note ' + args.note_id });
+          return { result: 'Note deleted.' };
+        }
+      }
+      return { result: 'Unhandled tool: ' + name, isError: true };
+    }
+
+    /* ---------- local control server (MCP proxy calls into here) ---------- */
+    const controlServer = nodeHttp.createServer((req: any, res: any) => {
+      const done = (code: number, obj: any) => {
+        const body = JSON.stringify(obj);
+        res.writeHead(code, { 'Content-Type': 'application/json' });
+        res.end(body);
+      };
+      if (req.method === 'GET' && req.url === '/tools') {
+        done(200, { tools: toolDefs.map((d) => ({ name: d.name, description: d.description, inputSchema: d.inputSchema })) });
+        return;
+      }
+      if (req.method === 'POST' && req.url === '/tool') {
+        const chunks: any[] = [];
+        req.on('data', (c: any) => chunks.push(c));
+        req.on('end', async () => {
+          try {
+            const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            post({ name: 'toolUse', tool: payload.name });
+            const out = await executeTool(payload.name, payload.arguments || {});
+            done(200, out);
+          } catch (err: any) {
+            done(200, { result: 'Tool execution failed: ' + String(err && err.message ? err.message : err), isError: true });
+          }
+        });
+        return;
+      }
+      done(404, { error: 'not found' });
+    });
+    await new Promise<void>((resolve) => controlServer.listen(0, '127.0.0.1', () => resolve()));
+    const controlPort = controlServer.address().port;
+
+    /* ---------- MCP proxy + config files in dataDir ---------- */
+    const dataDir = await joplin.plugins.dataDir();
+    const proxyPath = nodePath.join(dataDir, 'joplin-mcp-proxy.cjs');
+    nodeFs.writeFileSync(proxyPath, MCP_PROXY_SOURCE, 'utf8');
+    const mcpConfigPath = nodePath.join(dataDir, 'mcp-config.json');
+    // process.execPath is Joplin's Electron binary; with ELECTRON_RUN_AS_NODE
+    // it behaves as plain Node, so users need no separate Node install.
+    nodeFs.writeFileSync(mcpConfigPath, JSON.stringify({
+      mcpServers: {
+        joplin: {
+          command: process.execPath,
+          args: [proxyPath],
+          env: {
+            ELECTRON_RUN_AS_NODE: '1',
+            JOPLIN_CLAUDE_PORT: String(controlPort),
+          },
+        },
+      },
+    }, null, 2), 'utf8');
+
+    /* ---------- claude process management ---------- */
+    let child: any = null;
+    let sessionId: string = '';
+
+    function winQuote(s: string): string {
+      if (process.platform !== 'win32') return s;
+      if (!/[\s"]/.test(s)) return s;
+      return '"' + s.replace(/"/g, '\\"') + '"';
+    }
+
+    async function runClaude(prompt: string): Promise<void> {
+      if (child) {
+        post({ name: 'error', text: 'A request is already running.' });
+        return;
+      }
+      const claudePath = (await joplin.settings.value('claudePath')) || 'claude';
+      const model = await joplin.settings.value('claudeModel');
+      const extraArgs = String((await joplin.settings.value('extraCliArgs')) || '').trim();
+
+      let noteContext = '';
+      try {
+        const sel = await joplin.workspace.selectedNote();
+        if (sel) noteContext = ' The note currently open in the editor is "' + sel.title + '" (id: ' + sel.id + ').';
+      } catch (_) {}
+
+      const systemPrompt = 'You are embedded in the Joplin note-taking app as an assistant. '
+        + 'Use the mcp__joplin tools to read, search, create and edit the user\'s notes and notebooks. '
+        + 'Note bodies are Markdown. When editing a note, read it first and provide the full new body. '
+        + 'Write operations may require user approval; if one is declined, do not retry it.'
+        + noteContext;
+
+      const args: string[] = [
+        '-p',
+        '--output-format', 'stream-json',
+        '--verbose',
+        '--mcp-config', winQuote(mcpConfigPath),
+        '--allowedTools', 'mcp__joplin',
+        '--append-system-prompt', winQuote(systemPrompt),
+      ];
+      if (sessionId) { args.push('--resume', sessionId); }
+      if (model) { args.push('--model', winQuote(String(model))); }
+      if (extraArgs) { args.push(extraArgs); }
+
+      post({ name: 'busy', busy: true });
+      try {
+        child = nodeChildProcess.spawn(claudePath, args, {
+          shell: process.platform === 'win32',
+          windowsHide: true,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } catch (err: any) {
+        post({ name: 'error', text: 'Failed to start claude: ' + String(err && err.message ? err.message : err) });
+        post({ name: 'busy', busy: false });
+        child = null;
+        return;
+      }
+
+      child.stdin.write(prompt);
+      child.stdin.end();
+
+      let stdoutBuf = '';
+      let stderrBuf = '';
+      child.stdout.on('data', (chunk: any) => {
+        stdoutBuf += chunk.toString('utf8');
+        let idx;
+        while ((idx = stdoutBuf.indexOf('\n')) >= 0) {
+          const line = stdoutBuf.slice(0, idx).trim();
+          stdoutBuf = stdoutBuf.slice(idx + 1);
+          if (line) handleClaudeEvent(line);
+        }
+      });
+      child.stderr.on('data', (chunk: any) => { stderrBuf += chunk.toString('utf8'); });
+      child.on('error', (err: any) => {
+        post({ name: 'error', text: 'claude process error: ' + String(err && err.message ? err.message : err) + '. Is the Claude Code CLI installed and on PATH? (Settings > Joplin Claude)' });
+        post({ name: 'busy', busy: false });
+        child = null;
+      });
+      child.on('close', (code: number) => {
+        if (code !== 0 && stderrBuf.trim()) {
+          post({ name: 'error', text: 'claude exited with code ' + code + ': ' + stderrBuf.trim().slice(0, 500) });
+        }
+        post({ name: 'busy', busy: false });
+        child = null;
+      });
+    }
+
+    function handleClaudeEvent(line: string): void {
+      let ev: any;
+      try { ev = JSON.parse(line); } catch (_) { return; }
+      if (ev.session_id) sessionId = ev.session_id;
+
+      if (ev.type === 'assistant' && ev.message && Array.isArray(ev.message.content)) {
+        for (const block of ev.message.content) {
+          if (block.type === 'text' && block.text) {
+            post({ name: 'assistantText', text: block.text });
+          } else if (block.type === 'tool_use') {
+            const shortName = String(block.name || '').replace(/^mcp__joplin__/, '');
+            post({ name: 'toolUse', tool: shortName });
+          }
+        }
+      } else if (ev.type === 'result') {
+        post({ name: 'turnDone', isError: ev.is_error === true, costUsd: ev.total_cost_usd });
+      }
+    }
+
+    /* ---------- webview messages ---------- */
+    await joplin.views.panels.onMessage(panel, async (msg: any) => {
+      if (msg.name === 'send') {
+        const text = String(msg.text || '').trim();
+        if (text) await runClaude(text);
+      } else if (msg.name === 'stop') {
+        if (child) { try { child.kill(); } catch (_) {} }
+      } else if (msg.name === 'newSession') {
+        sessionId = '';
+        if (child) { try { child.kill(); } catch (_) {} }
+      } else if (msg.name === 'confirmResult') {
+        const pending = pendingConfirms[msg.requestId];
+        if (pending) {
+          clearTimeout(pending.timer);
+          delete pendingConfirms[msg.requestId];
+          pending.resolve(msg.approved === true);
+        }
+      }
+    });
+  },
+});
