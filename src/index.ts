@@ -149,7 +149,7 @@ joplin.plugins.register({
       },
       {
         name: 'search_notes',
-        description: 'Full-text search across all notes. Returns id, title and parent_id (max 50).',
+        description: 'Search notes with Joplin query syntax: plain words, "exact phrase", tag:xxx, notebook:xxx, type:todo, iscompleted:0, created:20260101, updated:day-7, sourceurl:*. Returns id, title, parent_id, todo fields (max 50).',
         inputSchema: {
           type: 'object',
           properties: { query: { type: 'string', description: 'Search query' } },
@@ -215,6 +215,90 @@ joplin.plugins.register({
             parent_id: { type: 'string', description: 'Parent notebook id (optional)' },
           },
           required: ['title'],
+        },
+      },
+      {
+        name: 'list_tags',
+        description: 'List all tags (id + title).',
+        inputSchema: { type: 'object', properties: {}, required: [] },
+      },
+      {
+        name: 'get_note_tags',
+        description: 'List the tags attached to a note.',
+        inputSchema: { type: 'object', properties: { note_id: { type: 'string' } }, required: ['note_id'] },
+      },
+      {
+        name: 'list_notes_by_tag',
+        description: 'List notes that carry a tag (by tag id, see list_tags).',
+        inputSchema: { type: 'object', properties: { tag_id: { type: 'string' } }, required: ['tag_id'] },
+      },
+      {
+        name: 'list_note_attachments',
+        description: 'List the file attachments (resources) of a note, with their LOCAL file paths. Use the Read tool with local_path to view an attachment (images, PDFs, text...).',
+        inputSchema: { type: 'object', properties: { note_id: { type: 'string' } }, required: ['note_id'] },
+      },
+      {
+        name: 'open_note',
+        description: 'Open a note in the Joplin editor (navigate the user to it).',
+        inputSchema: { type: 'object', properties: { note_id: { type: 'string' } }, required: ['note_id'] },
+      },
+      {
+        name: 'append_to_note',
+        description: 'Append markdown text to the END of a note. Prefer this over update_note when adding content - it cannot damage existing content.',
+        write: true,
+        confirmSummary: (a) => fmt(t.cAppend, { id: a.note_id, n: String(a.text || '').length }),
+        inputSchema: {
+          type: 'object',
+          properties: { note_id: { type: 'string' }, text: { type: 'string', description: 'Markdown to append' } },
+          required: ['note_id', 'text'],
+        },
+      },
+      {
+        name: 'tag_note',
+        description: 'Add a tag to a note (creates the tag if it does not exist).',
+        write: true,
+        confirmSummary: (a) => fmt(t.cTagNote, { id: a.note_id, tag: a.tag }),
+        inputSchema: {
+          type: 'object',
+          properties: { note_id: { type: 'string' }, tag: { type: 'string', description: 'Tag title' } },
+          required: ['note_id', 'tag'],
+        },
+      },
+      {
+        name: 'untag_note',
+        description: 'Remove a tag from a note.',
+        write: true,
+        confirmSummary: (a) => fmt(t.cUntagNote, { id: a.note_id, tag: a.tag }),
+        inputSchema: {
+          type: 'object',
+          properties: { note_id: { type: 'string' }, tag: { type: 'string', description: 'Tag title' } },
+          required: ['note_id', 'tag'],
+        },
+      },
+      {
+        name: 'set_todo_status',
+        description: 'Mark a to-do note as completed or not completed.',
+        write: true,
+        confirmSummary: (a) => fmt(t.cSetTodo, { id: a.note_id, state: a.completed ? 'done' : 'open' }),
+        inputSchema: {
+          type: 'object',
+          properties: { note_id: { type: 'string' }, completed: { type: 'boolean' } },
+          required: ['note_id', 'completed'],
+        },
+      },
+      {
+        name: 'update_notebook',
+        description: 'Rename a notebook and/or move it under another parent notebook.',
+        write: true,
+        confirmSummary: (a) => fmt(t.cUpdateNotebook, { id: a.notebook_id }),
+        inputSchema: {
+          type: 'object',
+          properties: {
+            notebook_id: { type: 'string' },
+            title: { type: 'string', description: 'New title' },
+            parent_id: { type: 'string', description: 'New parent notebook id ("" for top level)' },
+          },
+          required: ['notebook_id'],
         },
       },
       {
@@ -319,6 +403,18 @@ joplin.plugins.register({
       return items;
     }
 
+    // <profile>/resources holds attachment files; dataDir is <profile>/plugin-data/<id>
+    const resourcesDir = nodePath.resolve(dataDir, '..', '..', 'resources');
+
+    async function findOrCreateTag(title: string, create: boolean): Promise<any> {
+      const r = await joplin.data.get(['search'], { query: title, type: 'tag', fields: ['id', 'title'] });
+      const lower = String(title).toLowerCase();
+      const hit = (r.items || []).find((tg: any) => String(tg.title).toLowerCase() === lower);
+      if (hit) return hit;
+      if (!create) return null;
+      return await joplin.data.post(['tags'], null, { title });
+    }
+
     async function executeTool(name: string, args: any): Promise<{ result: any; isError?: boolean }> {
       const def = toolDefs.find((d) => d.name === name);
       if (!def) return { result: 'Unknown tool: ' + name, isError: true };
@@ -366,20 +462,76 @@ joplin.plugins.register({
         case 'list_notebooks':
           return { result: await getAllPaginated(['folders'], ['id', 'title', 'parent_id']) };
         case 'list_notes': {
-          const items = await getAllPaginated(['folders', args.notebook_id, 'notes'], ['id', 'title', 'user_updated_time']);
+          const items = await getAllPaginated(['folders', args.notebook_id, 'notes'], ['id', 'title', 'user_updated_time', 'is_todo', 'todo_completed']);
           items.sort((a, b) => (b.user_updated_time || 0) - (a.user_updated_time || 0));
-          return { result: items.slice(0, 200).map((n) => ({ id: n.id, title: n.title })) };
+          return { result: items.slice(0, 200).map((n) => ({ id: n.id, title: n.title, is_todo: n.is_todo, todo_completed: n.todo_completed })) };
         }
         case 'search_notes': {
-          const r = await joplin.data.get(['search'], { query: args.query, fields: ['id', 'title', 'parent_id'], limit: 50 });
+          const r = await joplin.data.get(['search'], { query: args.query, fields: ['id', 'title', 'parent_id', 'is_todo', 'todo_completed', 'todo_due', 'user_updated_time'], limit: 50 });
           return { result: r.items };
         }
         case 'read_note':
-          return { result: await joplin.data.get(['notes', args.note_id], { fields: ['id', 'title', 'body', 'parent_id'] }) };
+          return { result: await joplin.data.get(['notes', args.note_id], { fields: ['id', 'title', 'body', 'parent_id', 'is_todo', 'todo_completed', 'todo_due', 'user_created_time', 'user_updated_time', 'source_url'] }) };
         case 'get_selected_note': {
           const n = await joplin.workspace.selectedNote();
           if (!n) return { result: 'No note is currently selected.', isError: true };
           return { result: { id: n.id, title: n.title, body: n.body, parent_id: n.parent_id } };
+        }
+        case 'list_tags':
+          return { result: await getAllPaginated(['tags'], ['id', 'title']) };
+        case 'get_note_tags': {
+          const r = await joplin.data.get(['notes', args.note_id, 'tags'], { fields: ['id', 'title'], limit: 100 });
+          return { result: r.items };
+        }
+        case 'list_notes_by_tag': {
+          const items = await getAllPaginated(['tags', args.tag_id, 'notes'], ['id', 'title', 'parent_id', 'is_todo', 'todo_completed']);
+          return { result: items.slice(0, 200) };
+        }
+        case 'list_note_attachments': {
+          const r = await joplin.data.get(['notes', args.note_id, 'resources'], { fields: ['id', 'title', 'mime', 'file_extension', 'size'], limit: 100 });
+          const items = (r.items || []).map((res: any) => ({
+            id: res.id,
+            title: res.title,
+            mime: res.mime,
+            size: res.size,
+            local_path: nodePath.join(resourcesDir, res.id + (res.file_extension ? '.' + res.file_extension : '')),
+          }));
+          return { result: items.length ? items : 'This note has no attachments.' };
+        }
+        case 'open_note':
+          await joplin.commands.execute('openNote', args.note_id);
+          return { result: 'Opened.' };
+        case 'append_to_note': {
+          const cur = await joplin.data.get(['notes', args.note_id], { fields: ['body'] });
+          const joined = String(cur.body || '').replace(/\s+$/, '') + '\n\n' + String(args.text || '');
+          await joplin.data.put(['notes', args.note_id], null, { body: joined });
+          post({ name: 'toolDone', text: fmt(t.dUpdated, { id: args.note_id }) });
+          return { result: 'Appended.' };
+        }
+        case 'tag_note': {
+          const tag = await findOrCreateTag(String(args.tag), true);
+          await joplin.data.post(['tags', tag.id, 'notes'], null, { id: args.note_id });
+          return { result: 'Tagged with "' + tag.title + '".' };
+        }
+        case 'untag_note': {
+          const tag = await findOrCreateTag(String(args.tag), false);
+          if (!tag) return { result: 'Tag not found: ' + args.tag, isError: true };
+          await joplin.data.delete(['tags', tag.id, 'notes', args.note_id]);
+          return { result: 'Tag removed.' };
+        }
+        case 'set_todo_status': {
+          const n = await joplin.data.get(['notes', args.note_id], { fields: ['is_todo'] });
+          if (!n.is_todo) return { result: 'This note is not a to-do.', isError: true };
+          await joplin.data.put(['notes', args.note_id], null, { todo_completed: args.completed ? Date.now() : 0 });
+          return { result: args.completed ? 'Marked as done.' : 'Marked as open.' };
+        }
+        case 'update_notebook': {
+          const patch: any = {};
+          if (args.title !== undefined) patch.title = args.title;
+          if (args.parent_id !== undefined) patch.parent_id = args.parent_id;
+          if (Object.keys(patch).length === 0) return { result: 'Nothing to update.', isError: true };
+          await joplin.data.put(['folders', args.notebook_id], null, patch);
+          return { result: 'Notebook updated.' };
         }
         case 'create_note': {
           const payload: any = { title: args.title, body: args.body };
