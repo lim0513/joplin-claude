@@ -29,6 +29,8 @@ module.exports = (env) => {
         patterns: [
           { from: 'src/manifest.json', to: '.' },
           { from: 'src/webview', to: 'webview', noErrorOnMissing: true },
+          // Browser UMD build of markdown-it for the chat panel webview
+          { from: 'node_modules/markdown-it/dist/markdown-it.min.js', to: 'webview/markdown-it.min.js', info: { minimized: true } },
         ],
       }),
     ],

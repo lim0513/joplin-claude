@@ -84,6 +84,7 @@ joplin.plugins.register({
     /* ---------- panel ---------- */
     const panel = await joplin.views.panels.create('claudeChatPanel');
     await joplin.views.panels.addScript(panel, 'webview/panel.css');
+    await joplin.views.panels.addScript(panel, 'webview/markdown-it.min.js');
     await joplin.views.panels.addScript(panel, 'webview/panel.js');
     await joplin.views.panels.setHtml(panel, [
       '<div id="claude-root" data-i18n="' + escapeHtml(JSON.stringify(t)) + '">',
@@ -874,6 +875,17 @@ joplin.plugins.register({
       } else if (msg.name === 'send') {
         const text = String(msg.text || '').trim();
         if (text) await runClaude(text);
+      } else if (msg.name === 'openUrl') {
+        // Links inside rendered markdown. Only ever open http(s) in the
+        // system browser; joplin:// note links navigate inside the app.
+        const url = String(msg.url || '');
+        if (/^https?:\/\//i.test(url)) {
+          if (process.platform === 'win32') nodeChildProcess.spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' });
+          else if (process.platform === 'darwin') nodeChildProcess.spawn('open', [url], { detached: true, stdio: 'ignore' });
+          else nodeChildProcess.spawn('xdg-open', [url], { detached: true, stdio: 'ignore' });
+        } else if (/^:\/[0-9a-f]{32}$/i.test(url)) {
+          try { await joplin.commands.execute('openNote', url.slice(2)); } catch (_) { /* note may not exist */ }
+        }
       } else if (msg.name === 'stop') {
         killChild();
       } else if (msg.name === 'newSession') {

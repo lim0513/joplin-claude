@@ -26,9 +26,24 @@ function escapeHtml(text) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/* Minimal markdown-ish rendering for assistant replies: code blocks,
- * inline code, bold, line breaks. Everything else stays escaped text. */
+/* Markdown rendering for assistant replies via markdown-it (loaded as a
+ * separate webview script). html:false keeps raw HTML escaped (XSS-safe,
+ * javascript: links are rejected by markdown-it's validateLink), linkify
+ * turns bare URLs into links. Falls back to a minimal renderer if the
+ * library somehow failed to load. */
+var _md = null;
+function getMd() {
+  if (_md) return _md;
+  if (typeof window.markdownit === 'function') {
+    _md = window.markdownit({ html: false, linkify: true, breaks: true });
+    // Joplin internal note links (:/32-hex-id) - linkify them by hand below.
+  }
+  return _md;
+}
+
 function renderLite(text) {
+  var md = getMd();
+  if (md) return md.render(String(text == null ? '' : text));
   var s = escapeHtml(text);
   s = s.replace(/```([\s\S]*?)```/g, function (m, code) {
     return '<pre class="cc-code">' + code.replace(/^\n/, '') + '</pre>';
@@ -208,6 +223,14 @@ document.addEventListener('change', function (e) {
 document.addEventListener('click', function (e) {
   var t = e.target;
   if (!t) return;
+  // Markdown links: never navigate the webview itself - hand the URL to the
+  // backend, which opens http(s) in the system browser.
+  var link = t.closest ? t.closest('.cc-msg a[href]') : null;
+  if (link) {
+    e.preventDefault();
+    postMsg({ name: 'openUrl', url: link.getAttribute('href') });
+    return;
+  }
   if (t.id === 'cc-send') { sendCurrent(); return; }
   if (t.id === 'cc-attach') {
     var fi = el('cc-file');
