@@ -218,6 +218,9 @@ document.addEventListener('change', function (e) {
     handleFiles(e.target.files);
     e.target.value = '';
   }
+  if (e.target && e.target.id === 'cc-backend') {
+    postMsg({ name: 'setBackend', value: e.target.value });
+  }
 });
 
 document.addEventListener('click', function (e) {
@@ -232,7 +235,6 @@ document.addEventListener('click', function (e) {
     return;
   }
   if (t.id === 'cc-send') { sendCurrent(); return; }
-  if (t.id === 'cc-backend') { postMsg({ name: 'toggleBackend' }); return; }
   if (t.id === 'cc-attach') {
     var fi = el('cc-file');
     if (fi) fi.click();
@@ -475,7 +477,7 @@ webviewApi.onMessage(function (msg) {
     var bb = el('cc-backend');
     var label = m.backend === 'copilot' ? 'Copilot' : 'Claude';
     if (bb) {
-      bb.textContent = label;
+      bb.value = m.backend === 'copilot' ? 'copilot' : 'claude';
       bb.classList.toggle('cc-backend-copilot', m.backend === 'copilot');
     }
     if (m.switched) {

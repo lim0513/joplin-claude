@@ -42,13 +42,23 @@
   color: inherit;
 }
 .cc-header button + button { margin-left: 2px; }
-/* Backend switcher: a small pill showing the active engine */
+/* Backend switcher: a small pill dropdown showing the active engine */
 #cc-backend {
+  appearance: none;
+  -webkit-appearance: none;
   border: 1px solid rgba(127, 127, 127, 0.4);
   border-radius: 999px;
   font-size: 11px;
   padding: 2px 9px;
+  margin: 0 2px;
   color: var(--joplin-color-faded, #999);
+  background: transparent;
+  cursor: pointer;
+}
+#cc-backend:hover { color: inherit; background: rgba(127, 127, 127, 0.15); }
+#cc-backend option {
+  color: var(--joplin-color, #ddd);
+  background: var(--joplin-background-color, #1e1e1e);
 }
 #cc-backend.cc-backend-copilot {
   border-color: rgba(88, 166, 255, 0.55);

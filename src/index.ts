@@ -120,7 +120,10 @@ joplin.plugins.register({
       '<div id="aide-root" data-i18n="' + escapeHtml(JSON.stringify(t)) + '">',
       '  <div class="cc-header"><span class="cc-title">Aide</span>',
       '    <span id="cc-note-context" class="cc-note-context"></span>',
-      '    <button id="cc-backend" title="' + escapeHtml(t.titleBackend) + '"></button>',
+      '    <select id="cc-backend" title="' + escapeHtml(t.titleBackend) + '">',
+      '      <option value="claude">Claude</option>',
+      '      <option value="copilot">Copilot</option>',
+      '    </select>',
       '    <button id="cc-history" title="' + escapeHtml(t.titleHistory) + '">&#x1F550;</button>',
       '    <button id="cc-new" title="' + escapeHtml(t.titleNew) + '">&#x2795;</button>',
       '  </div>',
@@ -1102,14 +1105,16 @@ joplin.plugins.register({
         } else if (/^:\/[0-9a-f]{32}$/i.test(url)) {
           try { await joplin.commands.execute('openNote', url.slice(2)); } catch (_) { /* note may not exist */ }
         }
-      } else if (msg.name === 'toggleBackend') {
-        // Seamless switch from the panel header. Takes effect on the next
+      } else if (msg.name === 'setBackend') {
+        // Dropdown switch from the panel header. Takes effect on the next
         // message: runClaude reads the setting per turn, and the
         // lastBackend guard starts a fresh CLI session automatically.
+        const next = msg.value === 'copilot' ? 'copilot' : 'claude';
         const cur = String((await joplin.settings.value('backend')) || 'claude');
-        const next = cur === 'claude' ? 'copilot' : 'claude';
-        await joplin.settings.setValue('backend', next);
-        post({ name: 'backendState', backend: next, switched: true });
+        if (next !== cur) {
+          await joplin.settings.setValue('backend', next);
+          post({ name: 'backendState', backend: next, switched: true });
+        }
       } else if (msg.name === 'stop') {
         killChild();
       } else if (msg.name === 'newSession') {
