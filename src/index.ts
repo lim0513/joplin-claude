@@ -48,6 +48,13 @@ joplin.plugins.register({
       iconName: 'fas fa-robot',
     });
     await joplin.settings.registerSettings({
+      'backend': {
+        section: 'joplinAide', type: SETTING_STRING, value: 'claude', public: true,
+        isEnum: true,
+        options: { claude: 'Claude Code', copilot: 'GitHub Copilot' },
+        label: 'AI backend',
+        description: 'Which local CLI powers the chat. Each must be installed and logged in on its own (claude / copilot). Switching backends starts a new session.',
+      },
       'claudePath': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
         subType: 'file_path', // renders a file picker in the options screen
@@ -58,6 +65,17 @@ joplin.plugins.register({
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
         label: 'Model (optional)',
         description: 'Passed as --model. Leave empty to use the CLI default.',
+      },
+      'copilotPath': {
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
+        subType: 'file_path',
+        label: 'Copilot CLI path (copilot)',
+        description: 'Full path to the copilot executable. Leave empty to use "copilot" from the system PATH.',
+      },
+      'copilotModel': {
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
+        label: 'Copilot model (optional)',
+        description: 'Passed as --model to the Copilot CLI. Leave empty for automatic model selection.',
       },
       'requireWriteConfirm': {
         section: 'joplinAide', type: SETTING_BOOL, value: true, public: true, advanced: true,
@@ -624,6 +642,23 @@ joplin.plugins.register({
         },
       },
     }, null, 2), 'utf8');
+    // Copilot CLI variant of the same server config: it additionally wants
+    // "type" and a "tools" allowlist inside the server entry.
+    const mcpConfigCopilotPath = nodePath.join(dataDir, 'mcp-config-copilot.json');
+    nodeFs.writeFileSync(mcpConfigCopilotPath, JSON.stringify({
+      mcpServers: {
+        joplin: {
+          type: 'local',
+          command: process.execPath,
+          args: [proxyPath],
+          env: {
+            ELECTRON_RUN_AS_NODE: '1',
+            JOPLIN_AIDE_PORT: String(controlPort),
+          },
+          tools: ['*'],
+        },
+      },
+    }, null, 2), 'utf8');
 
     /* ---------- conversation history (persisted to dataDir) ---------- */
     const historyPath = nodePath.join(dataDir, 'conversations.json');
@@ -686,9 +721,13 @@ joplin.plugins.register({
     let pendingAttachments: { id: string; fileName: string; filePath: string }[] = [];
     let attachSeq = 0;
 
-    /* ---------- claude process management ---------- */
+    /* ---------- agent process management ---------- */
     let child: any = null;
     let sessionId: string = '';
+    // Which backend the RUNNING child belongs to (event formats differ).
+    let runBackend: string = 'claude';
+    // Session ids are backend-specific: switching backends starts fresh.
+    let lastBackend: string = '';
 
     // Force-stop the running request. On Windows child.kill() only terminates
     // the wrapper shell - taskkill /T /F takes the whole process tree down so
@@ -718,9 +757,11 @@ joplin.plugins.register({
         post({ name: 'busy', busy: true });
         return;
       }
-      // Empty setting = resolve "claude" via the system PATH.
-      const claudePath = String((await joplin.settings.value('claudePath')) || '').trim() || 'claude';
-      const model = await joplin.settings.value('claudeModel');
+      const backend = String((await joplin.settings.value('backend')) || 'claude');
+      // Session ids don't transfer between CLIs - switching backends resets.
+      if (lastBackend && lastBackend !== backend) { sessionId = ''; sessionAllowed = {}; }
+      lastBackend = backend;
+
       const extraArgs = String((await joplin.settings.value('extraCliArgs')) || '').trim();
 
       let noteContext = '';
@@ -729,48 +770,92 @@ joplin.plugins.register({
         if (sel) noteContext = ' The note currently open in the editor is "' + sel.title + '" (id: ' + sel.id + ').';
       } catch (_) {}
 
+      const toolPrefix = backend === 'copilot' ? 'joplin MCP' : 'mcp__joplin';
       const systemPrompt = 'You are embedded in the Joplin note-taking app as an assistant. '
-        + 'Use the mcp__joplin tools to read, search, create and edit the user\'s notes and notebooks. '
+        + 'Use the ' + toolPrefix + ' tools to read, search, create and edit the user\'s notes and notebooks. '
         + 'Note bodies are Markdown. When editing a note, read it first and provide the full new body. '
         + 'Write operations may require user approval; if one is declined, do not retry it. '
-        + 'To ask the user a multiple-choice question, use the mcp__joplin__ask_user tool - it renders clickable buttons in the panel and waits for the answer. '
-        + 'The built-in AskUserQuestion tool does NOT work in this environment; never use it.'
+        + 'To ask the user a multiple-choice question, use the ' + toolPrefix + ' ask_user tool - it renders clickable buttons in the panel and waits for the answer. '
+        + 'Other question mechanisms do NOT work in this environment; never use them.'
         + noteContext;
 
-      const extraTools = String((await joplin.settings.value('extraAllowedTools')) || '')
-        .split(',').map((t: string) => t.trim()).filter((t: string) => !!t);
-      const allowedTools = ['mcp__joplin'].concat(extraTools).join(',');
+      let bin: string;
+      let args: string[];
 
-      const args: string[] = [
-        '-p',
-        '--output-format', 'stream-json',
-        '--include-partial-messages',
-        '--verbose',
-        '--mcp-config', winQuote(mcpConfigPath),
-        '--allowedTools', winQuote(allowedTools),
-        '--permission-prompt-tool', 'mcp__joplin__approval_prompt',
-        '--append-system-prompt', winQuote(systemPrompt),
-      ];
-      if (sessionId) { args.push('--resume', sessionId); }
-      if (model) { args.push('--model', winQuote(String(model))); }
-      if (extraArgs) { args.push(extraArgs); }
+      if (backend === 'copilot') {
+        bin = String((await joplin.settings.value('copilotPath')) || '').trim() || 'copilot';
+        const model = await joplin.settings.value('copilotModel');
+        args = [
+          '--output-format', 'json',
+          '--no-color',
+          '--log-level', 'none',
+          '--disable-builtin-mcps',
+          '--no-ask-user',
+          '--additional-mcp-config', winQuote('@' + mcpConfigCopilotPath),
+          '--allow-tool', 'joplin',
+        ];
+        if (sessionId) { args.push('--resume=' + sessionId); }
+        if (model) { args.push('--model', winQuote(String(model))); }
+        if (extraArgs) { args.push(extraArgs); }
+      } else {
+        bin = String((await joplin.settings.value('claudePath')) || '').trim() || 'claude';
+        const model = await joplin.settings.value('claudeModel');
+        const extraTools = String((await joplin.settings.value('extraAllowedTools')) || '')
+          .split(',').map((t: string) => t.trim()).filter((t: string) => !!t);
+        const allowedTools = ['mcp__joplin'].concat(extraTools).join(',');
+        args = [
+          '-p',
+          '--output-format', 'stream-json',
+          '--include-partial-messages',
+          '--verbose',
+          '--mcp-config', winQuote(mcpConfigPath),
+          '--allowedTools', winQuote(allowedTools),
+          '--permission-prompt-tool', 'mcp__joplin__approval_prompt',
+          '--append-system-prompt', winQuote(systemPrompt),
+        ];
+        if (sessionId) { args.push('--resume', sessionId); }
+        if (model) { args.push('--model', winQuote(String(model))); }
+        if (extraArgs) { args.push(extraArgs); }
+      }
 
       if (pendingAttachments.length) {
-        const attachmentLines = pendingAttachments.map((a) => '- ' + a.filePath);
-        prompt += '\n\n[The user attached the following files. Use the Read tool to view them:]\n' + attachmentLines.join('\n');
+        if (backend === 'copilot') {
+          // Images/documents ride --attachment; everything else is listed in
+          // the prompt with the attachments dir allowlisted for file reads.
+          const nativeExt = /\.(png|jpe?g|gif|webp|bmp|pdf|docx|pptx|xlsx)$/i;
+          const plain: string[] = [];
+          let addDir = false;
+          for (const a of pendingAttachments) {
+            if (nativeExt.test(a.fileName)) { args.push('--attachment', winQuote(a.filePath)); }
+            else { plain.push('- ' + a.filePath); addDir = true; }
+          }
+          if (addDir) {
+            args.push('--add-dir', winQuote(attachmentsDir), '--allow-tool', 'read');
+            prompt += '\n\n[The user attached the following files. Read them from disk:]\n' + plain.join('\n');
+          }
+        } else {
+          const attachmentLines = pendingAttachments.map((a) => '- ' + a.filePath);
+          prompt += '\n\n[The user attached the following files. Use the Read tool to view them:]\n' + attachmentLines.join('\n');
+        }
         pendingAttachments = [];
         post({ name: 'attachmentsCleared' });
       }
       record('user', prompt);
+      // Copilot has no --append-system-prompt: context rides at the top of
+      // the prompt itself (recorded history keeps the clean user text above).
+      if (backend === 'copilot') {
+        prompt = '<context>' + systemPrompt + '</context>\n\n' + prompt;
+      }
+      runBackend = backend;
       post({ name: 'busy', busy: true });
       try {
-        child = nodeChildProcess.spawn(winQuote(claudePath), args, {
+        child = nodeChildProcess.spawn(winQuote(bin), args, {
           shell: process.platform === 'win32',
           windowsHide: true,
           stdio: ['pipe', 'pipe', 'pipe'],
         });
       } catch (err: any) {
-        post({ name: 'error', text: fmt(t.errStartFailed, { err: String(err && err.message ? err.message : err) }) });
+        post({ name: 'error', text: fmt(t.errStartFailed, { bin, err: String(err && err.message ? err.message : err) }) });
         post({ name: 'busy', busy: false });
         child = null;
         return;
@@ -787,18 +872,18 @@ joplin.plugins.register({
         while ((idx = stdoutBuf.indexOf('\n')) >= 0) {
           const line = stdoutBuf.slice(0, idx).trim();
           stdoutBuf = stdoutBuf.slice(idx + 1);
-          if (line) handleClaudeEvent(line);
+          if (line) { if (runBackend === 'copilot') handleCopilotEvent(line); else handleClaudeEvent(line); }
         }
       });
       child.stderr.on('data', (chunk: any) => { stderrBuf += chunk.toString('utf8'); });
       child.on('error', (err: any) => {
-        post({ name: 'error', text: fmt(t.errProcess, { err: String(err && err.message ? err.message : err) }) });
+        post({ name: 'error', text: fmt(t.errProcess, { bin, err: String(err && err.message ? err.message : err) }) });
         post({ name: 'busy', busy: false });
         child = null;
       });
       child.on('close', (code: number) => {
         if (code !== 0 && stderrBuf.trim()) {
-          post({ name: 'error', text: fmt(t.errExited, { code, err: stderrBuf.trim().slice(0, 500) }) });
+          post({ name: 'error', text: fmt(t.errExited, { bin, code, err: stderrBuf.trim().slice(0, 500) }) });
         }
         post({ name: 'busy', busy: false });
         child = null;
@@ -849,6 +934,59 @@ joplin.plugins.register({
         }
       } else if (ev.type === 'result') {
         post({ name: 'turnDone', isError: ev.is_error === true, costUsd: ev.total_cost_usd });
+      }
+    }
+
+    // Copilot CLI --output-format json: JSONL, one event object per line.
+    // Mapping: assistant.message_start/_delta -> live streaming bubble,
+    // assistant.message -> authoritative final text, tool.* -> chips,
+    // result -> sessionId + turn end.
+    function handleCopilotEvent(line: string): void {
+      let ev: any;
+      try { ev = JSON.parse(line); } catch (_) { return; }
+      const type = String(ev.type || '');
+      const d = ev.data || {};
+
+      if (type === 'result') {
+        if (ev.sessionId) {
+          sessionId = String(ev.sessionId);
+          if (currentConv && currentConv.sessionId !== sessionId) {
+            currentConv.sessionId = sessionId;
+            saveHistory();
+          }
+        }
+        post({ name: 'turnDone', isError: ev.exitCode !== 0 });
+        return;
+      }
+      if (type === 'assistant.message_start') {
+        post({ name: 'assistantStart' });
+        return;
+      }
+      if (type === 'assistant.message_delta') {
+        if (d.deltaContent) post({ name: 'assistantDelta', text: d.deltaContent });
+        return;
+      }
+      if (type === 'assistant.message') {
+        if (d.content) {
+          record('assistant', d.content);
+          post({ name: 'assistantText', text: d.content });
+        }
+        return;
+      }
+      // Tool lifecycle events: exact names vary between CLI versions, so
+      // match defensively on the type prefix and pick the first name field.
+      if (type.indexOf('tool.') === 0) {
+        const rawName = String(d.toolName || d.name || d.tool || '');
+        if (rawName && /start|begin|request|call/i.test(type)) {
+          const shortName = rawName.replace(/^joplin[_\-]{1,2}/, '');
+          record('tool', shortName);
+          post({ name: 'toolUse', tool: shortName });
+        }
+        return;
+      }
+      if (/\berror\b/i.test(type)) {
+        const msg = String(d.message || d.error || line).slice(0, 500);
+        post({ name: 'error', text: msg });
       }
     }
 
