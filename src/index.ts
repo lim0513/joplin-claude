@@ -55,54 +55,54 @@ joplin.plugins.register({
         label: 'AI backend',
         description: 'Which local CLI powers the chat. Each must be installed and logged in on its own (claude / copilot). Switching backends starts a new session.',
       },
+      'requireWriteConfirm': {
+        section: 'joplinAide', type: SETTING_BOOL, value: true, public: true,
+        label: 'Confirm before the AI modifies notes',
+        description: 'Create/update/delete operations wait for your approval in the chat panel. Applies to both backends.',
+      },
       'claudePath': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
         subType: 'file_path', // renders a file picker in the options screen
-        label: 'Claude Code CLI path (claude.exe)',
+        label: '— Claude · CLI path (claude.exe)',
         description: 'Full path to the claude executable. Leave empty to use "claude" from the system PATH.',
       },
       'claudeModel': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
-        label: 'Claude model (optional)',
+        label: 'Claude · model (optional)',
         description: 'Passed as --model. Leave empty to use the CLI default.',
       },
       'extraAllowedTools': {
         section: 'joplinAide', type: SETTING_STRING, value: 'WebSearch,WebFetch,Read', public: true,
-        label: 'Additional allowed Claude tools',
+        label: 'Claude · additional allowed tools',
         description: 'Comma-separated Claude Code tools to auto-allow besides the Joplin note tools. Tools NOT listed here trigger an Approve/Decline card in the chat panel. Default: WebSearch,WebFetch,Read (Read is needed to view chat and note attachments without prompting).',
       },
       // Key kept as 'extraCliArgs' so values set before the split carry over
       // (it always applied to claude only in practice).
       'extraCliArgs': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
-        label: 'Claude extra CLI arguments',
+        label: 'Claude · extra CLI arguments',
         description: 'Advanced: appended verbatim to the claude command line.',
       },
       'copilotPath': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
         subType: 'file_path',
-        label: 'Copilot CLI path (copilot)',
+        label: '— Copilot · CLI path (copilot)',
         description: 'Full path to the copilot executable. Leave empty to use "copilot" from the system PATH.',
       },
       'copilotModel': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
-        label: 'Copilot model (optional)',
+        label: 'Copilot · model (optional)',
         description: 'Passed as --model to the Copilot CLI. Leave empty for automatic model selection.',
       },
       'copilotAllowTools': {
-        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
-        label: 'Additional allowed Copilot tools',
-        description: 'Comma-separated Copilot CLI tools to allow besides the Joplin note tools, each passed as --allow-tool (e.g. fetch, write, shell(git:*)). Copilot has no approval prompt: tools not allowed here are denied automatically.',
+        section: 'joplinAide', type: SETTING_STRING, value: 'url', public: true,
+        label: 'Copilot · additional allowed tools',
+        description: 'Comma-separated permission patterns passed as --allow-tool (kinds: url(domain?), write, shell(cmd:*)). Copilot has no approval prompt: anything not allowed here is denied automatically. Default: url — web fetch to any https URL, mirroring the Claude default (WebSearch/WebFetch). File reads need no entry (the attachments dir is allowlisted automatically).',
       },
       'copilotExtraArgs': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
-        label: 'Copilot extra CLI arguments',
+        label: 'Copilot · extra CLI arguments',
         description: 'Advanced: appended verbatim to the copilot command line.',
-      },
-      'requireWriteConfirm': {
-        section: 'joplinAide', type: SETTING_BOOL, value: true, public: true, advanced: true,
-        label: 'Confirm before the AI modifies notes',
-        description: 'Create/update/delete operations wait for your approval in the chat panel. Applies to both backends.',
       },
       'autoApproveAll': {
         section: 'joplinAide', type: SETTING_BOOL, value: false, public: true, advanced: true,
@@ -847,7 +847,8 @@ joplin.plugins.register({
             else { plain.push('- ' + a.filePath); addDir = true; }
           }
           if (addDir) {
-            args.push('--add-dir', winQuote(attachmentsDir), '--allow-tool', 'read');
+            // File reads are gated by path (--add-dir), not tool permissions.
+            args.push('--add-dir', winQuote(attachmentsDir));
             prompt += '\n\n[The user attached the following files. Read them from disk:]\n' + plain.join('\n');
           }
         } else {
