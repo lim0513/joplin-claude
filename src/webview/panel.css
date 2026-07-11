@@ -42,6 +42,17 @@
   color: inherit;
 }
 .cc-header button + button { margin-left: 2px; }
+/* Backend switcher: a small pill showing the active engine */
+#cc-backend {
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 9px;
+  color: var(--joplin-color-faded, #999);
+}
+#cc-backend.cc-backend-copilot {
+  border-color: rgba(88, 166, 255, 0.55);
+}
 
 #cc-messages {
   flex: 1;

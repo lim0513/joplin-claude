@@ -232,6 +232,7 @@ document.addEventListener('click', function (e) {
     return;
   }
   if (t.id === 'cc-send') { sendCurrent(); return; }
+  if (t.id === 'cc-backend') { postMsg({ name: 'toggleBackend' }); return; }
   if (t.id === 'cc-attach') {
     var fi = el('cc-file');
     if (fi) fi.click();
@@ -395,6 +396,16 @@ webviewApi.onMessage(function (msg) {
   } else if (m.name === 'attachmentsCleared') {
     var wrap2 = el('cc-attachments');
     if (wrap2) wrap2.innerHTML = '';
+  } else if (m.name === 'backendState') {
+    var bb = el('cc-backend');
+    var label = m.backend === 'copilot' ? 'Copilot' : 'Claude';
+    if (bb) {
+      bb.textContent = label;
+      bb.classList.toggle('cc-backend-copilot', m.backend === 'copilot');
+    }
+    if (m.switched) {
+      addToolChip('⇄ ' + T('backendSwitched').replace('{name}', label));
+    }
   } else if (m.name === 'noteContext') {
     var nc = el('cc-note-context');
     if (nc) nc.textContent = m.title ? '\uD83D\uDCC4 ' + m.title : '';
