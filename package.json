@@ -1,12 +1,12 @@
 {
-  "name": "joplin-plugin-claude",
+  "name": "joplin-plugin-aide",
   "version": "0.4.2",
   "description": "Chat with Claude inside Joplin - Claude can read, search, create and edit your notes (powered by your local Claude Code CLI)",
   "author": "lim0513",
-  "homepage": "https://github.com/lim0513/joplin-claude",
+  "homepage": "https://github.com/lim0513/joplin-aide",
   "repository": {
     "type": "git",
-    "url": "https://github.com/lim0513/joplin-claude.git"
+    "url": "https://github.com/lim0513/joplin-aide.git"
   },
   "scripts": {
     "dist": "webpack --env production && node scripts/pack-jpl.js",

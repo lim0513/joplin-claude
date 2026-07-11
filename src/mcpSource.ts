@@ -7,11 +7,11 @@
  * tools/list and tools/call to the plugin's local control server, where the
  * real work happens via joplin.data (including the write-confirmation flow).
  */
-export const MCP_PROXY_SOURCE = `/* Joplin Claude - MCP stdio proxy (auto-generated, do not edit) */
+export const MCP_PROXY_SOURCE = `/* Joplin Aide - MCP stdio proxy (auto-generated, do not edit) */
 'use strict';
 var http = require('http');
 
-var PORT = parseInt(process.env.JOPLIN_CLAUDE_PORT || '0', 10);
+var PORT = parseInt(process.env.JOPLIN_AIDE_PORT || '0', 10);
 
 function callControl(method, path, payload, cb) {
   var data = payload ? Buffer.from(JSON.stringify(payload), 'utf8') : null;

@@ -1,4 +1,4 @@
-# Joplin Claude
+# Joplin Aide
 
 Chat with Claude inside [Joplin](https://joplinapp.org/) — Claude can read, search, create and edit your notes and notebooks, powered by your locally installed [Claude Code](https://claude.com/claude-code) CLI.
 
@@ -29,7 +29,7 @@ The MCP proxy is a zero-dependency script shipped inside the plugin. Claude Code
 
 ## Install
 
-1. Download `plugin.jpl` from the [latest release](https://github.com/lim0513/joplin-claude/releases/latest)
+1. Download `plugin.jpl` from the [latest release](https://github.com/lim0513/joplin-aide/releases/latest)
 2. In Joplin, go to **Tools → Options → Plugins**
 3. Click the gear icon and select **Install from file**
 4. Choose the downloaded `.jpl` file and restart Joplin
@@ -41,7 +41,7 @@ The MCP proxy is a zero-dependency script shipped inside the plugin. Claude Code
 
 ## Settings
 
-**Tools → Options → Joplin Claude**: CLI command/path, model override, write-confirmation toggle, extra CLI arguments (advanced).
+**Tools → Options → Joplin Aide**: CLI command/path, model override, write-confirmation toggle, extra CLI arguments (advanced).
 
 ## Development
 

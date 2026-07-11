@@ -1,4 +1,4 @@
-// i18n strings for Joplin Claude. Follows Joplin's locale setting.
+// i18n strings for Joplin Aide. Follows Joplin's locale setting.
 // Only USER-FACING text lives here - messages addressed to the model
 // (tool results, deny reasons) stay English in index.ts.
 
@@ -18,7 +18,7 @@ export const i18nData: { [locale: string]: I18nStrings } = {
     decline: 'Decline',
     errAlreadyRunning: 'A request is already running.',
     errStartFailed: 'Failed to start claude: {err}',
-    errProcess: 'claude process error: {err}. Is the Claude Code CLI installed and on PATH? (Settings > Joplin Claude)',
+    errProcess: 'claude process error: {err}. Is the Claude Code CLI installed and on PATH? (Settings > Joplin Aide)',
     errExited: 'claude exited with code {code}: {err}',
     cCreateNote: 'Create note "{title}"',
     cUpdateNote: 'Update note {id}',
@@ -54,7 +54,7 @@ export const i18nData: { [locale: string]: I18nStrings } = {
     decline: '拒绝',
     errAlreadyRunning: '已有请求正在运行。',
     errStartFailed: '启动 claude 失败：{err}',
-    errProcess: 'claude 进程错误：{err}。请确认已安装 Claude Code CLI 且在 PATH 中（设置 > Joplin Claude）。',
+    errProcess: 'claude 进程错误：{err}。请确认已安装 Claude Code CLI 且在 PATH 中（设置 > Joplin Aide）。',
     errExited: 'claude 退出，代码 {code}：{err}',
     cCreateNote: '新建笔记「{title}」',
     cUpdateNote: '修改笔记 {id}',
@@ -90,7 +90,7 @@ export const i18nData: { [locale: string]: I18nStrings } = {
     decline: '拒否',
     errAlreadyRunning: 'リクエストがすでに実行中です。',
     errStartFailed: 'claude の起動に失敗しました：{err}',
-    errProcess: 'claude プロセスエラー：{err}。Claude Code CLI がインストールされ PATH にあるか確認してください（設定 > Joplin Claude）。',
+    errProcess: 'claude プロセスエラー：{err}。Claude Code CLI がインストールされ PATH にあるか確認してください（設定 > Joplin Aide）。',
     errExited: 'claude がコード {code} で終了：{err}',
     cCreateNote: 'ノート「{title}」を作成',
     cUpdateNote: 'ノート {id} を更新',

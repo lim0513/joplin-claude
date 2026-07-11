@@ -43,52 +43,52 @@ joplin.plugins.register({
     const t: I18nStrings = getI18n(locale);
 
     /* ---------- settings ---------- */
-    await joplin.settings.registerSection('joplinClaude', {
-      label: 'Joplin Claude',
+    await joplin.settings.registerSection('joplinAide', {
+      label: 'Joplin Aide',
       iconName: 'fas fa-robot',
     });
     await joplin.settings.registerSettings({
       'claudePath': {
-        section: 'joplinClaude', type: SETTING_STRING, value: '', public: true,
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
         subType: 'file_path', // renders a file picker in the options screen
         label: 'Claude Code CLI path (claude.exe)',
         description: 'Full path to the claude executable. Leave empty to use "claude" from the system PATH.',
       },
       'claudeModel': {
-        section: 'joplinClaude', type: SETTING_STRING, value: '', public: true,
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
         label: 'Model (optional)',
         description: 'Passed as --model. Leave empty to use the CLI default.',
       },
       'requireWriteConfirm': {
-        section: 'joplinClaude', type: SETTING_BOOL, value: true, public: true, advanced: true,
+        section: 'joplinAide', type: SETTING_BOOL, value: true, public: true, advanced: true,
         label: 'Confirm before Claude modifies notes',
         description: 'Create/update/delete operations wait for your approval in the chat panel.',
       },
       'autoApproveAll': {
-        section: 'joplinClaude', type: SETTING_BOOL, value: false, public: true, advanced: true,
+        section: 'joplinAide', type: SETTING_BOOL, value: false, public: true, advanced: true,
         label: '\uD83D\uDD34 \u26A0 AUTO MODE \u2014 approve ALL permission requests \u26A0',
         description: 'DANGER: when enabled, EVERY request is approved automatically without asking - note edits and deletions, AND any tool Claude asks for (potentially including shell commands). Claude gets free rein over your notes. Equivalent to running Claude Code with permissions disabled. Leave OFF unless you fully accept the risk.',
       },
       'extraAllowedTools': {
-        section: 'joplinClaude', type: SETTING_STRING, value: 'WebSearch,WebFetch,Read', public: true, advanced: true,
+        section: 'joplinAide', type: SETTING_STRING, value: 'WebSearch,WebFetch,Read', public: true, advanced: true,
         label: 'Additional allowed Claude tools',
         description: 'Comma-separated Claude Code tools to auto-allow besides the Joplin note tools. Tools NOT listed here trigger an Approve/Decline card in the chat panel. Default: WebSearch,WebFetch,Read (Read is needed to view chat and note attachments without prompting).',
       },
       'extraCliArgs': {
-        section: 'joplinClaude', type: SETTING_STRING, value: '', public: true, advanced: true,
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true, advanced: true,
         label: 'Extra CLI arguments',
         description: 'Advanced: appended verbatim to the claude command line.',
       },
     });
 
     /* ---------- panel ---------- */
-    const panel = await joplin.views.panels.create('claudeChatPanel');
+    const panel = await joplin.views.panels.create('aideChatPanel');
     await joplin.views.panels.addScript(panel, 'webview/panel.css');
     await joplin.views.panels.addScript(panel, 'webview/markdown-it.min.js');
     await joplin.views.panels.addScript(panel, 'webview/panel.js');
     await joplin.views.panels.setHtml(panel, [
-      '<div id="claude-root" data-i18n="' + escapeHtml(JSON.stringify(t)) + '">',
-      '  <div class="cc-header"><span class="cc-title">Claude</span>',
+      '<div id="aide-root" data-i18n="' + escapeHtml(JSON.stringify(t)) + '">',
+      '  <div class="cc-header"><span class="cc-title">Aide</span>',
       '    <span id="cc-note-context" class="cc-note-context"></span>',
       '    <button id="cc-history" title="' + escapeHtml(t.titleHistory) + '">&#x1F550;</button>',
       '    <button id="cc-new" title="' + escapeHtml(t.titleNew) + '">&#x2795;</button>',
@@ -110,15 +110,15 @@ joplin.plugins.register({
     await joplin.views.panels.show(panel, false);
 
     await joplin.commands.register({
-      name: 'toggleClaudePanel',
-      label: 'Toggle Claude panel',
+      name: 'toggleAidePanel',
+      label: 'Toggle Aide panel',
       iconName: 'fas fa-robot',
       execute: async () => {
         const visible = await joplin.views.panels.visible(panel);
         await joplin.views.panels.show(panel, !visible);
       },
     });
-    await joplin.views.toolbarButtons.create('claudePanelButton', 'toggleClaudePanel', 'noteToolbar');
+    await joplin.views.toolbarButtons.create('aidePanelButton', 'toggleAidePanel', 'noteToolbar');
 
     // Keep the panel header showing which note Claude will target.
     async function pushNoteContext(): Promise<void> {
@@ -619,7 +619,7 @@ joplin.plugins.register({
           args: [proxyPath],
           env: {
             ELECTRON_RUN_AS_NODE: '1',
-            JOPLIN_CLAUDE_PORT: String(controlPort),
+            JOPLIN_AIDE_PORT: String(controlPort),
           },
         },
       },
@@ -646,7 +646,7 @@ joplin.plugins.register({
           if (conversations.length > 100) conversations.length = 100;
           nodeFs.writeFileSync(historyPath, JSON.stringify(conversations), 'utf8');
         } catch (err) {
-          console.error('Joplin Claude: failed to save history', err);
+          console.error('Joplin Aide: failed to save history', err);
         }
       }, 400);
     }

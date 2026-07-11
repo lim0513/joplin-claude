@@ -1,4 +1,4 @@
-/* Joplin Claude - chat panel webview */
+/* Joplin Aide - chat panel webview */
 
 function postMsg(msg) { webviewApi.postMessage(msg); }
 
@@ -8,10 +8,10 @@ var _busy = false;
 
 function el(id) { return document.getElementById(id); }
 
-// i18n strings serialized by the backend into data-i18n on #claude-root
+// i18n strings serialized by the backend into data-i18n on #aide-root
 function T(key) {
   if (!window._i18n) {
-    var root = document.getElementById('claude-root');
+    var root = document.getElementById('aide-root');
     if (root && root.dataset.i18n) {
       try { window._i18n = JSON.parse(root.dataset.i18n); } catch (e) { window._i18n = {}; }
     } else {
@@ -361,7 +361,7 @@ webviewApi.onMessage(function (msg) {
       }
     }
     overlay.appendChild(box);
-    document.getElementById('claude-root').appendChild(overlay);
+    document.getElementById('aide-root').appendChild(overlay);
   } else if (m.name === 'conversationLoaded') {
     var ov3 = el('cc-history-overlay');
     if (ov3) ov3.remove();
