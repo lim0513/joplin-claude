@@ -53,6 +53,15 @@
 #cc-backend.cc-backend-copilot {
   border-color: rgba(88, 166, 255, 0.55);
 }
+/* One line per backend-switch notice */
+.cc-switch-note {
+  align-self: center;
+  font-size: 11px;
+  color: var(--joplin-color-faded, #999);
+  background: rgba(127, 127, 127, 0.12);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
 
 #cc-messages {
   flex: 1;
@@ -233,15 +242,17 @@
   background: rgba(74, 156, 245, 0.08);
 }
 .cc-q-text { margin-bottom: 6px; }
-.cc-q-options { display: flex; flex-wrap: wrap; gap: 6px; }
+/* One option per line - easier to scan and click than a wrapped row */
+.cc-q-options { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 .cc-q-option {
   border: 1px solid var(--joplin-divider-color, #555);
   background: transparent;
   color: inherit;
   border-radius: 14px;
-  padding: 3px 12px;
+  padding: 4px 12px;
   cursor: pointer;
   font-size: 12px;
+  text-align: left;
 }
 .cc-q-option:hover:not(:disabled) { background: rgba(74, 156, 245, 0.2); }
 .cc-q-option:disabled { opacity: 0.45; cursor: default; }

@@ -404,7 +404,13 @@ webviewApi.onMessage(function (msg) {
       bb.classList.toggle('cc-backend-copilot', m.backend === 'copilot');
     }
     if (m.switched) {
-      addToolChip('⇄ ' + T('backendSwitched').replace('{name}', label));
+      // Own row per switch - addToolChip would glue repeated switches (and
+      // later tool chips) onto one line.
+      var note = document.createElement('div');
+      note.className = 'cc-switch-note';
+      note.textContent = '⇄ ' + T('backendSwitched').replace('{name}', label);
+      appendToMessages(note);
+      scrollToBottom();
     }
   } else if (m.name === 'noteContext') {
     var nc = el('cc-note-context');
