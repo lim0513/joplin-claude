@@ -66,6 +66,11 @@ joplin.plugins.register({
         label: 'Claude model (optional)',
         description: 'Passed as --model. Leave empty to use the CLI default.',
       },
+      'extraAllowedTools': {
+        section: 'joplinAide', type: SETTING_STRING, value: 'WebSearch,WebFetch,Read', public: true,
+        label: 'Additional allowed Claude tools',
+        description: 'Comma-separated Claude Code tools to auto-allow besides the Joplin note tools. Tools NOT listed here trigger an Approve/Decline card in the chat panel. Default: WebSearch,WebFetch,Read (Read is needed to view chat and note attachments without prompting).',
+      },
       // Key kept as 'extraCliArgs' so values set before the split carry over
       // (it always applied to claude only in practice).
       'extraCliArgs': {
@@ -84,6 +89,11 @@ joplin.plugins.register({
         label: 'Copilot model (optional)',
         description: 'Passed as --model to the Copilot CLI. Leave empty for automatic model selection.',
       },
+      'copilotAllowTools': {
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
+        label: 'Additional allowed Copilot tools',
+        description: 'Comma-separated Copilot CLI tools to allow besides the Joplin note tools, each passed as --allow-tool (e.g. fetch, write, shell(git:*)). Copilot has no approval prompt: tools not allowed here are denied automatically.',
+      },
       'copilotExtraArgs': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
         label: 'Copilot extra CLI arguments',
@@ -91,18 +101,13 @@ joplin.plugins.register({
       },
       'requireWriteConfirm': {
         section: 'joplinAide', type: SETTING_BOOL, value: true, public: true, advanced: true,
-        label: 'Confirm before Claude modifies notes',
-        description: 'Create/update/delete operations wait for your approval in the chat panel.',
+        label: 'Confirm before the AI modifies notes',
+        description: 'Create/update/delete operations wait for your approval in the chat panel. Applies to both backends.',
       },
       'autoApproveAll': {
         section: 'joplinAide', type: SETTING_BOOL, value: false, public: true, advanced: true,
         label: '\uD83D\uDD34 \u26A0 AUTO MODE \u2014 approve ALL permission requests \u26A0',
-        description: 'DANGER: when enabled, EVERY request is approved automatically without asking - note edits and deletions, AND any tool Claude asks for (potentially including shell commands). Claude gets free rein over your notes. Equivalent to running Claude Code with permissions disabled. Leave OFF unless you fully accept the risk.',
-      },
-      'extraAllowedTools': {
-        section: 'joplinAide', type: SETTING_STRING, value: 'WebSearch,WebFetch,Read', public: true, advanced: true,
-        label: 'Additional allowed Claude tools',
-        description: 'Comma-separated Claude Code tools to auto-allow besides the Joplin note tools. Tools NOT listed here trigger an Approve/Decline card in the chat panel. Default: WebSearch,WebFetch,Read (Read is needed to view chat and note attachments without prompting).',
+        description: 'DANGER: when enabled, EVERY request is approved automatically without asking - note edits and deletions, AND any tool the AI asks for (potentially including shell commands). The AI gets free rein over your notes. Equivalent to running the CLI with permissions disabled. Leave OFF unless you fully accept the risk.',
       },
     });
 
@@ -803,6 +808,9 @@ joplin.plugins.register({
           '--additional-mcp-config', winQuote('@' + mcpConfigCopilotPath),
           '--allow-tool', 'joplin',
         ];
+        const copilotTools = String((await joplin.settings.value('copilotAllowTools')) || '')
+          .split(',').map((s: string) => s.trim()).filter((s: string) => !!s);
+        for (const ct of copilotTools) { args.push('--allow-tool', winQuote(ct)); }
         if (sessionId) { args.push('--resume=' + sessionId); }
         if (model) { args.push('--model', winQuote(String(model))); }
         if (extraArgs) { args.push(extraArgs); }
