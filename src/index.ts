@@ -63,7 +63,7 @@ joplin.plugins.register({
       'claudePath': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
         subType: 'file_path', // renders a file picker in the options screen
-        label: '— Claude · CLI path (claude.exe)',
+        label: '— Claude · CLI path (claude)',
         description: 'Full path to the claude executable. Leave empty to use "claude" from the system PATH.',
       },
       'claudeModel': {
@@ -71,10 +71,25 @@ joplin.plugins.register({
         label: 'Claude · model (optional)',
         description: 'Passed as --model. Leave empty to use the CLI default.',
       },
+      'claudeAllowWebSearch': {
+        section: 'joplinAide', type: SETTING_BOOL, value: true, public: true,
+        label: 'Claude · allow WebSearch',
+        description: 'Let Claude search the web without asking.',
+      },
+      'claudeAllowWebFetch': {
+        section: 'joplinAide', type: SETTING_BOOL, value: true, public: true,
+        label: 'Claude · allow WebFetch',
+        description: 'Let Claude fetch web pages without asking.',
+      },
+      'claudeAllowRead': {
+        section: 'joplinAide', type: SETTING_BOOL, value: true, public: true,
+        label: 'Claude · allow Read',
+        description: 'Let Claude read local files without asking - needed to view chat and note attachments.',
+      },
       'extraAllowedTools': {
-        section: 'joplinAide', type: SETTING_STRING, value: 'WebSearch,WebFetch,Read', public: true,
-        label: 'Claude · additional allowed tools',
-        description: 'Comma-separated Claude Code tools to auto-allow besides the Joplin note tools. Tools NOT listed here trigger an Approve/Decline card in the chat panel. Default: WebSearch,WebFetch,Read (Read is needed to view chat and note attachments without prompting).',
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
+        label: 'Claude · other allowed tools',
+        description: 'Comma-separated additional Claude Code tools to auto-allow. Tools not allowed trigger an Approve/Decline card in the chat panel.',
       },
       // Key kept as 'extraCliArgs' so values set before the split carry over
       // (it always applied to claude only in practice).
@@ -94,10 +109,25 @@ joplin.plugins.register({
         label: 'Copilot · model (optional)',
         description: 'Passed as --model to the Copilot CLI. Leave empty for automatic model selection.',
       },
+      'copilotAllowUrl': {
+        section: 'joplinAide', type: SETTING_BOOL, value: true, public: true,
+        label: 'Copilot · allow web access',
+        description: 'Allow the web-fetch tool for any https URL (--allow-tool url). Copilot has no approval prompt: tools not allowed are denied automatically.',
+      },
+      'copilotAllowWrite': {
+        section: 'joplinAide', type: SETTING_BOOL, value: false, public: true,
+        label: 'Copilot · allow file writes',
+        description: 'Allow Copilot to create and modify local files (--allow-tool write). Note edits are NOT affected - they go through the Joplin tools and the confirmation cards.',
+      },
+      'copilotAllowShell': {
+        section: 'joplinAide', type: SETTING_BOOL, value: false, public: true,
+        label: '⚠ Copilot · allow shell commands',
+        description: 'Allow ALL shell commands without asking (--allow-tool shell). Risky - prefer adding narrow patterns like shell(git:*) to the field below.',
+      },
       'copilotAllowTools': {
-        section: 'joplinAide', type: SETTING_STRING, value: 'url', public: true,
-        label: 'Copilot · additional allowed tools',
-        description: 'Comma-separated permission patterns passed as --allow-tool (kinds: url(domain?), write, shell(cmd:*)). Copilot has no approval prompt: anything not allowed here is denied automatically. Default: url — web fetch to any https URL, mirroring the Claude default (WebSearch/WebFetch). File reads need no entry (the attachments dir is allowlisted automatically).',
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
+        label: 'Copilot · other allowed tools',
+        description: 'Comma-separated additional permission patterns passed as --allow-tool, e.g. url(github.com), shell(git:*). File reads need no entry (the attachments dir is allowlisted automatically).',
       },
       'copilotExtraArgs': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
@@ -808,8 +838,15 @@ joplin.plugins.register({
           '--additional-mcp-config', winQuote('@' + mcpConfigCopilotPath),
           '--allow-tool', 'joplin',
         ];
-        const copilotTools = String((await joplin.settings.value('copilotAllowTools')) || '')
-          .split(',').map((s: string) => s.trim()).filter((s: string) => !!s);
+        // Checkbox toggles + free-text patterns, de-duplicated.
+        const copilotTools: string[] = [];
+        if ((await joplin.settings.value('copilotAllowUrl')) !== false) copilotTools.push('url');
+        if ((await joplin.settings.value('copilotAllowWrite')) === true) copilotTools.push('write');
+        if ((await joplin.settings.value('copilotAllowShell')) === true) copilotTools.push('shell');
+        for (const s of String((await joplin.settings.value('copilotAllowTools')) || '').split(',')) {
+          const v = s.trim();
+          if (v && copilotTools.indexOf(v) < 0) copilotTools.push(v);
+        }
         for (const ct of copilotTools) { args.push('--allow-tool', winQuote(ct)); }
         if (sessionId) { args.push('--resume=' + sessionId); }
         if (model) { args.push('--model', winQuote(String(model))); }
@@ -817,8 +854,15 @@ joplin.plugins.register({
       } else {
         bin = String((await joplin.settings.value('claudePath')) || '').trim() || 'claude';
         const model = await joplin.settings.value('claudeModel');
-        const extraTools = String((await joplin.settings.value('extraAllowedTools')) || '')
-          .split(',').map((t: string) => t.trim()).filter((t: string) => !!t);
+        // Checkbox toggles + free-text extras, de-duplicated.
+        const extraTools: string[] = [];
+        if ((await joplin.settings.value('claudeAllowWebSearch')) !== false) extraTools.push('WebSearch');
+        if ((await joplin.settings.value('claudeAllowWebFetch')) !== false) extraTools.push('WebFetch');
+        if ((await joplin.settings.value('claudeAllowRead')) !== false) extraTools.push('Read');
+        for (const s of String((await joplin.settings.value('extraAllowedTools')) || '').split(',')) {
+          const v = s.trim();
+          if (v && extraTools.indexOf(v) < 0) extraTools.push(v);
+        }
         const allowedTools = ['mcp__joplin'].concat(extraTools).join(',');
         args = [
           '-p',
