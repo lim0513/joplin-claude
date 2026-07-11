@@ -233,14 +233,6 @@ document.addEventListener('click', function (e) {
   }
   if (t.id === 'cc-send') { sendCurrent(); return; }
   if (t.id === 'cc-backend') { postMsg({ name: 'toggleBackend' }); return; }
-  if (t.id === 'cc-load-earlier') {
-    var lm = el('cc-messages');
-    var prevH = lm ? lm.scrollHeight : 0;
-    renderHistoryChunk();
-    // keep the viewport anchored on what the user was reading
-    if (lm) lm.scrollTop += lm.scrollHeight - prevH;
-    return;
-  }
   if (t.id === 'cc-attach') {
     var fi = el('cc-file');
     if (fi) fi.click();
@@ -293,6 +285,7 @@ document.addEventListener('click', function (e) {
   }
   if (t.id === 'cc-new') {
     postMsg({ name: 'newSession' });
+    _histMsgs = null; _histShown = 0; _histConvId = ''; _histSegNext = -1; _histFetching = false;
     var m = el('cc-messages');
     if (m) m.innerHTML = '';
     var c = el('cc-confirm');
@@ -320,9 +313,12 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
-// ---- chunked history rendering ----
-var _histMsgs = null; // full transcript of the loaded conversation
-var _histShown = 0;   // how many entries from the tail are in the DOM
+// ---- chunked history rendering (seamless scroll-up pagination) ----
+var _histMsgs = null;    // in-memory transcript of the loaded conversation
+var _histShown = 0;      // how many entries from the tail are in the DOM
+var _histConvId = '';    // conversation the archive segments belong to
+var _histSegNext = -1;   // next archive segment to fetch (newest first), -1 = none
+var _histFetching = false;
 
 function buildMsgNode(one) {
   var div = document.createElement('div');
@@ -338,29 +334,41 @@ function buildMsgNode(one) {
   return div;
 }
 
-// Renders the next older chunk (newest chunk first call). Keeps a
-// "show earlier" button pinned above the oldest rendered entry.
+// Prepends the next older in-memory chunk (newest chunk on the first call).
 function renderHistoryChunk() {
   var m = el('cc-messages');
   if (!m || !_histMsgs) return;
   var CHUNK = 100;
   var end = _histMsgs.length - _histShown;
   var start = Math.max(0, end - CHUNK);
-  var oldBtn = document.getElementById('cc-load-earlier');
-  if (oldBtn) oldBtn.remove();
+  if (end <= start) return;
   var frag = document.createDocumentFragment();
   for (var i = start; i < end; i++) frag.appendChild(buildMsgNode(_histMsgs[i]));
-  var anchor = m.firstChild;
-  if (start > 0) {
-    var btn = document.createElement('button');
-    btn.id = 'cc-load-earlier';
-    btn.textContent = T('loadEarlier').replace('{n}', String(start));
-    m.insertBefore(btn, m.firstChild);
-    anchor = btn.nextSibling;
-  }
-  m.insertBefore(frag, anchor);
+  m.insertBefore(frag, m.firstChild);
   _histShown += (end - start);
 }
+
+// Called when the user nears the top: first drain the in-memory transcript,
+// then pull archived segments from the backend (newest segment first). The
+// scroll position is re-anchored after prepending so the view doesn't jump.
+function maybeLoadEarlier() {
+  var m = el('cc-messages');
+  if (!m) return;
+  if (_histMsgs && _histShown < _histMsgs.length) {
+    var prevH = m.scrollHeight;
+    renderHistoryChunk();
+    m.scrollTop += m.scrollHeight - prevH;
+  } else if (_histSegNext >= 0 && !_histFetching) {
+    _histFetching = true;
+    postMsg({ name: 'loadOlder', id: _histConvId, seq: _histSegNext });
+  }
+}
+
+document.addEventListener('scroll', function (e) {
+  if (e.target && e.target.id === 'cc-messages' && e.target.scrollTop < 40) {
+    maybeLoadEarlier();
+  }
+}, true);
 
 // Live streaming bubble state (token-level deltas)
 var _streamBubble = null;
@@ -420,11 +428,13 @@ webviewApi.onMessage(function (msg) {
     if (mm) mm.innerHTML = '';
     var cf = el('cc-confirm');
     if (cf) cf.innerHTML = '';
-    // Long transcripts: render only the newest chunk; a button at the top
-    // reveals earlier chunks on demand (building the whole DOM at once
-    // visibly froze the panel).
+    // Long transcripts: render only the newest chunk; scrolling to the top
+    // pages in older chunks (then archived segments) seamlessly.
     _histMsgs = m.messages || [];
     _histShown = 0;
+    _histConvId = m.id || '';
+    _histSegNext = (m.archiveSegments || 0) - 1;
+    _histFetching = false;
     renderHistoryChunk();
     scrollToBottom();
     setBusy(false);
@@ -445,6 +455,22 @@ webviewApi.onMessage(function (msg) {
   } else if (m.name === 'attachmentsCleared') {
     var wrap2 = el('cc-attachments');
     if (wrap2) wrap2.innerHTML = '';
+  } else if (m.name === 'olderMessages') {
+    _histFetching = false;
+    if (m.id !== _histConvId) return; // stale reply after switching
+    if (m.messages && m.messages.length) {
+      var om = el('cc-messages');
+      var prevOH = om ? om.scrollHeight : 0;
+      var ofrag = document.createDocumentFragment();
+      for (var ok = 0; ok < m.messages.length; ok++) ofrag.appendChild(buildMsgNode(m.messages[ok]));
+      if (om) {
+        om.insertBefore(ofrag, om.firstChild);
+        om.scrollTop += om.scrollHeight - prevOH;
+      }
+      _histSegNext = (typeof m.seq === 'number' ? m.seq : _histSegNext) - 1;
+    } else {
+      _histSegNext = -1; // missing/empty segment - stop asking
+    }
   } else if (m.name === 'backendState') {
     var bb = el('cc-backend');
     var label = m.backend === 'copilot' ? 'Copilot' : 'Claude';

@@ -684,6 +684,15 @@ joplin.plugins.register({
     let currentConv: any = null;
     let historySaveTimer: any = null;
 
+    // Overflow segments live next to conversations.json, one file per
+    // HISTORY_SEGMENT oldest entries: history/<convId>-<seq>.json
+    const HISTORY_SEGMENT = 200;
+    const archiveDir = nodePath.join(dataDir, 'history');
+    try { nodeFs.mkdirSync(archiveDir, { recursive: true }); } catch (_) {}
+    function archiveSegPath(convId: string, seq: number): string {
+      return nodePath.join(archiveDir, String(convId).replace(/[^\w-]/g, '_') + '-' + seq + '.json');
+    }
+
     // Async, non-overlapping write: writeFileSync blocked the plugin thread
     // for tens of ms once the file grew to a few MB - felt as a hitch at the
     // end of every turn. If a save is requested while one is in flight, it
@@ -729,10 +738,19 @@ joplin.plugins.register({
         currentConv.title = text.slice(0, 60);
       }
       currentConv.messages.push({ role, text });
-      // Conversations are capped at 100, but a single one could grow without
-      // bound - keep the most recent 300 entries.
-      if (currentConv.messages.length > 300) {
-        currentConv.messages.splice(0, currentConv.messages.length - 300);
+      // Nothing is discarded: when a conversation exceeds 2 segments worth
+      // of entries, the oldest SEGMENT of them spills into its own archive
+      // file. conversations.json stays small; archives load on scroll-up.
+      if (currentConv.messages.length > 2 * HISTORY_SEGMENT) {
+        const spill = currentConv.messages.splice(0, HISTORY_SEGMENT);
+        const seq = currentConv.archiveSegments || 0;
+        try {
+          nodeFs.writeFileSync(archiveSegPath(currentConv.id, seq), JSON.stringify(spill), 'utf8');
+          currentConv.archiveSegments = seq + 1;
+        } catch (err) {
+          currentConv.messages.unshift(...spill); // keep in main file instead
+          console.error('Joplin Aide: failed to write history segment', err);
+        }
       }
       currentConv.updated = Date.now();
       if (sessionId) currentConv.sessionId = sessionId;
@@ -1059,7 +1077,7 @@ joplin.plugins.register({
         // reload looks like a brand-new empty conversation.
         await pushNoteContext();
         if (currentConv && currentConv.messages && currentConv.messages.length) {
-          post({ name: 'conversationLoaded', messages: currentConv.messages });
+          post({ name: 'conversationLoaded', id: currentConv.id, messages: currentConv.messages, archiveSegments: currentConv.archiveSegments || 0 });
         }
         post({ name: 'busy', busy: !!child });
         post({ name: 'backendState', backend: String((await joplin.settings.value('backend')) || 'claude') });
@@ -1111,9 +1129,24 @@ joplin.plugins.register({
           killChild();
           currentConv = conv;
           sessionId = conv.sessionId || '';
-          post({ name: 'conversationLoaded', messages: conv.messages || [] });
+          post({ name: 'conversationLoaded', id: conv.id, messages: conv.messages || [], archiveSegments: conv.archiveSegments || 0 });
         }
+      } else if (msg.name === 'loadOlder') {
+        // Scroll-up pagination: hand back one archived segment (seq counts
+        // from 0 = oldest; the panel requests newest-first).
+        let older: any[] = [];
+        try {
+          const parsed = JSON.parse(nodeFs.readFileSync(archiveSegPath(String(msg.id), Number(msg.seq) | 0), 'utf8'));
+          if (Array.isArray(parsed)) older = parsed;
+        } catch (_) { /* segment missing - reply empty so the panel stops asking */ }
+        post({ name: 'olderMessages', id: msg.id, seq: msg.seq, messages: older });
       } else if (msg.name === 'deleteConversation') {
+        const gone = conversations.find((c) => c.id === msg.id);
+        if (gone && gone.archiveSegments) {
+          for (let s = 0; s < gone.archiveSegments; s++) {
+            try { nodeFs.unlinkSync(archiveSegPath(gone.id, s)); } catch (_) {}
+          }
+        }
         conversations = conversations.filter((c) => c.id !== msg.id);
         if (currentConv && currentConv.id === msg.id) { currentConv = null; sessionId = ''; }
         saveHistory();
