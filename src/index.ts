@@ -780,8 +780,11 @@ joplin.plugins.register({
     let sessionId: string = '';
     // Which backend the RUNNING child belongs to (event formats differ).
     let runBackend: string = 'claude';
-    // Session ids are backend-specific: switching backends starts fresh.
-    let lastBackend: string = '';
+    // Backend that OWNS the current sessionId. Ids don't transfer between
+    // CLIs, so any mismatch - switching engines mid-chat, or loading a
+    // conversation recorded on the other engine - must start fresh instead
+    // of feeding a foreign id to --resume ("No session matched" errors).
+    let sessionBackend: string = '';
 
     // Force-stop the running request. On Windows child.kill() only terminates
     // the wrapper shell - taskkill /T /F takes the whole process tree down so
@@ -835,9 +838,8 @@ joplin.plugins.register({
         return;
       }
       const backend = String((await joplin.settings.value('backend')) || 'claude');
-      // Session ids don't transfer between CLIs - switching backends resets.
-      if (lastBackend && lastBackend !== backend) { sessionId = ''; sessionAllowed = {}; }
-      lastBackend = backend;
+      if (sessionId && sessionBackend && sessionBackend !== backend) { sessionId = ''; sessionAllowed = {}; }
+      sessionBackend = backend;
 
       const extraArgs = String((await joplin.settings.value(
         backend === 'copilot' ? 'copilotExtraArgs' : 'extraCliArgs')) || '').trim();
@@ -983,6 +985,12 @@ joplin.plugins.register({
         const stderrText = stderrChunks.length ? decodeOutput(Buffer.concat(stderrChunks)).trim() : '';
         if (code !== 0 && stderrText) {
           post({ name: 'error', text: fmt(t.errExited, { bin, code, err: stderrText.slice(0, 500) }) });
+          // The CLI no longer knows this session (cleaned store, foreign id
+          // from an old history entry...) - drop it so a retry starts fresh.
+          if (/No session, task, or name matched|No conversation found/i.test(stderrText)) {
+            sessionId = '';
+            sessionBackend = '';
+          }
         }
         post({ name: 'busy', busy: false });
         child = null;
@@ -996,6 +1004,7 @@ joplin.plugins.register({
 
       if (currentConv && sessionId && currentConv.sessionId !== sessionId) {
         currentConv.sessionId = sessionId;
+        currentConv.backend = runBackend;
         saveHistory();
       }
 
@@ -1059,6 +1068,7 @@ joplin.plugins.register({
           sessionId = String(ev.sessionId);
           if (currentConv && currentConv.sessionId !== sessionId) {
             currentConv.sessionId = sessionId;
+            currentConv.backend = runBackend;
             saveHistory();
           }
         }
@@ -1152,6 +1162,7 @@ joplin.plugins.register({
         killChild();
       } else if (msg.name === 'newSession') {
         sessionId = '';
+        sessionBackend = '';
         currentConv = null;
         sessionAllowed = {};
         killChild();
@@ -1167,6 +1178,9 @@ joplin.plugins.register({
           killChild();
           currentConv = conv;
           sessionId = conv.sessionId || '';
+          // Pre-dual-backend conversations carry no backend field - they
+          // were all Claude sessions.
+          sessionBackend = sessionId ? (conv.backend || 'claude') : '';
           post({ name: 'conversationLoaded', id: conv.id, messages: conv.messages || [], archiveSegments: conv.archiveSegments || 0 });
         }
       } else if (msg.name === 'loadOlder') {
