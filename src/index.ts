@@ -803,6 +803,29 @@ joplin.plugins.register({
       return '"' + s.replace(/"/g, '\\"') + '"';
     }
 
+    // A missing CLI otherwise dies inside cmd.exe with a localized
+    // "not recognized as an internal or external command" - GBK-encoded on
+    // Chinese Windows, i.e. mojibake in the panel, with no hint what to do.
+    function cliExists(bin: string): boolean {
+      try {
+        if (bin.indexOf('/') >= 0 || bin.indexOf('\\') >= 0) return nodeFs.existsSync(bin);
+        const probe = process.platform === 'win32'
+          ? nodeChildProcess.spawnSync('where', [bin], { windowsHide: true })
+          : nodeChildProcess.spawnSync('which', [bin]);
+        return probe.status === 0;
+      } catch (_) { return true; } // uncertain - let spawn find out
+    }
+
+    // stderr arrives in the console codepage, not necessarily UTF-8 (GBK on
+    // Chinese Windows). Fall back to GBK when UTF-8 decoding shows damage.
+    function decodeOutput(buf: any): string {
+      let s = buf.toString('utf8');
+      if (process.platform === 'win32' && s.indexOf('�') >= 0) {
+        try { s = new TextDecoder('gbk').decode(buf); } catch (_) { /* keep utf8 */ }
+      }
+      return s;
+    }
+
     async function runClaude(prompt: string): Promise<void> {
       if (child) {
         // Safety net (the webview also locks sending while busy). Reset the
@@ -883,6 +906,15 @@ joplin.plugins.register({
         if (extraArgs) { args.push(extraArgs); }
       }
 
+      if (!cliExists(bin)) {
+        const installCmd = backend === 'copilot'
+          ? 'npm install -g @github/copilot'
+          : 'npm install -g @anthropic-ai/claude-code';
+        post({ name: 'error', text: fmt(t.errCliMissing, { bin, cmd: installCmd }) });
+        post({ name: 'busy', busy: false });
+        return;
+      }
+
       if (pendingAttachments.length) {
         if (backend === 'copilot') {
           // Images/documents ride --attachment; everything else is listed in
@@ -931,7 +963,7 @@ joplin.plugins.register({
       child.stdin.end();
 
       let stdoutBuf = '';
-      let stderrBuf = '';
+      const stderrChunks: any[] = [];
       child.stdout.on('data', (chunk: any) => {
         stdoutBuf += chunk.toString('utf8');
         let idx;
@@ -941,15 +973,16 @@ joplin.plugins.register({
           if (line) { if (runBackend === 'copilot') handleCopilotEvent(line); else handleClaudeEvent(line); }
         }
       });
-      child.stderr.on('data', (chunk: any) => { stderrBuf += chunk.toString('utf8'); });
+      child.stderr.on('data', (chunk: any) => { stderrChunks.push(chunk); });
       child.on('error', (err: any) => {
         post({ name: 'error', text: fmt(t.errProcess, { bin, err: String(err && err.message ? err.message : err) }) });
         post({ name: 'busy', busy: false });
         child = null;
       });
       child.on('close', (code: number) => {
-        if (code !== 0 && stderrBuf.trim()) {
-          post({ name: 'error', text: fmt(t.errExited, { bin, code, err: stderrBuf.trim().slice(0, 500) }) });
+        const stderrText = stderrChunks.length ? decodeOutput(Buffer.concat(stderrChunks)).trim() : '';
+        if (code !== 0 && stderrText) {
+          post({ name: 'error', text: fmt(t.errExited, { bin, code, err: stderrText.slice(0, 500) }) });
         }
         post({ name: 'busy', busy: false });
         child = null;
