@@ -1161,6 +1161,32 @@ joplin.plugins.register({
       } else if (msg.name === 'copyText') {
         // Clipboard fallback for webviews where navigator.clipboard fails.
         try { await (joplin as any).clipboard.writeText(String(msg.text || '')); } catch (_) {}
+      } else if (msg.name === 'restartFrom') {
+        // Rewind: drop this user message and everything after it. CLI
+        // sessions can't be truncated server-side, so the next send starts
+        // a FRESH session; the message text goes back to the input box.
+        if (currentConv && Array.isArray(currentConv.messages)) {
+          const wantTs = Number(msg.ts) || 0;
+          // Live bubbles carry the webview's Date.now(), which differs by a
+          // few ms from the ts record() stamped - fall back to text + window.
+          let idx = currentConv.messages.findIndex((mm: any) => mm.role === 'user' && Number(mm.ts) === wantTs);
+          if (idx < 0 && msg.text) {
+            idx = currentConv.messages.findIndex((mm: any) =>
+              mm.role === 'user' && mm.text === msg.text && Math.abs(Number(mm.ts || 0) - wantTs) < 15000);
+          }
+          if (idx >= 0) {
+            killChild();
+            currentConv.messages = currentConv.messages.slice(0, idx);
+            currentConv.updated = Date.now();
+            currentConv.sessionId = '';
+            sessionId = '';
+            sessionBackend = '';
+            sessionAllowed = {};
+            saveHistory();
+            post({ name: 'conversationLoaded', id: currentConv.id, messages: currentConv.messages, archiveSegments: currentConv.archiveSegments || 0 });
+            post({ name: 'setInput', text: String(msg.text || '') });
+          }
+        }
       } else if (msg.name === 'stop') {
         killChild();
       } else if (msg.name === 'newSession') {

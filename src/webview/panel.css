@@ -84,7 +84,7 @@
   transition: opacity 0.12s;
 }
 .cc-msg-wrap:hover .cc-msg-footer { opacity: 1; }
-.cc-copy {
+.cc-copy, .cc-restart {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -96,7 +96,19 @@
   padding: 3px 4px;
   line-height: 1;
 }
-.cc-copy:hover { background: rgba(127, 127, 127, 0.18); color: inherit; }
+.cc-copy:hover, .cc-restart:hover { background: rgba(127, 127, 127, 0.18); color: inherit; }
+/* Confirm pill under the footer (Claude-desktop style) */
+.cc-restart-pop { margin-top: 4px; }
+.cc-restart-pop button {
+  border: none;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.22);
+  color: inherit;
+  font-size: 11px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.cc-restart-pop button:hover { background: rgba(127, 127, 127, 0.35); }
 .cc-msg-time {
   font-size: 10px;
   color: var(--joplin-color-faded, #999);

@@ -234,6 +234,40 @@ document.addEventListener('click', function (e) {
     postMsg({ name: 'openUrl', url: link.getAttribute('href') });
     return;
   }
+  // Restart button: first click pops the confirm pill, clicking the pill
+  // executes, any other click dismisses it.
+  var restartBtn = t.closest ? t.closest('.cc-restart') : null;
+  if (restartBtn) {
+    var rWrap = restartBtn.closest('.cc-msg-wrap');
+    var oldPop = document.querySelector('.cc-restart-pop');
+    if (oldPop) {
+      var samePop = oldPop.parentElement === rWrap;
+      oldPop.remove();
+      if (samePop) return; // toggle off
+    }
+    var pop = document.createElement('div');
+    pop.className = 'cc-restart-pop';
+    var pb = document.createElement('button');
+    pb.textContent = T('restartHere');
+    pop.appendChild(pb);
+    if (rWrap) rWrap.appendChild(pop);
+    return;
+  }
+  var restartGo = t.closest ? t.closest('.cc-restart-pop') : null;
+  if (restartGo) {
+    var gWrap = restartGo.closest('.cc-msg-wrap');
+    var gBubble = gWrap ? gWrap.querySelector('.cc-msg') : null;
+    postMsg({
+      name: 'restartFrom',
+      ts: Number((gWrap && gWrap.dataset.ts) || 0),
+      text: gBubble && gBubble._ccRaw ? gBubble._ccRaw : '',
+    });
+    restartGo.remove();
+    return;
+  }
+  var strayPop = document.querySelector('.cc-restart-pop');
+  if (strayPop) strayPop.remove();
+
   var copyBtn = t.closest ? t.closest('.cc-copy') : null;
   if (copyBtn) {
     var copyWrap = copyBtn.closest('.cc-msg-wrap');
@@ -354,6 +388,7 @@ function fmtMsgTime(ts) {
 // Copy / check icons for the hover footer (Claude-desktop style).
 var CC_COPY_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
 var CC_CHECK_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+var CC_RESTART_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>';
 
 // Hover footer BELOW the bubble (outside it, Claude-desktop style): the
 // bubble is moved into a .cc-msg-wrap and the footer (borderless icon
@@ -376,6 +411,16 @@ function attachMsgFooter(bubble, rawText, ts) {
   if (old) old.remove();
   var foot = document.createElement('div');
   foot.className = 'cc-msg-footer';
+  // User messages with a timestamp can be a rewind point (Claude-desktop
+  // style "restart conversation from here").
+  if (bubble.classList.contains('cc-user') && ts) {
+    wrap.dataset.ts = String(ts);
+    var rbtn = document.createElement('button');
+    rbtn.className = 'cc-restart';
+    rbtn.title = T('titleRestart');
+    rbtn.innerHTML = CC_RESTART_SVG;
+    foot.appendChild(rbtn);
+  }
   var btn = document.createElement('button');
   btn.className = 'cc-copy';
   btn.title = T('titleCopy');
@@ -500,6 +545,9 @@ webviewApi.onMessage(function (msg) {
     }
     overlay.appendChild(box);
     document.getElementById('aide-root').appendChild(overlay);
+  } else if (m.name === 'setInput') {
+    var siEl = el('cc-input');
+    if (siEl) { siEl.value = m.text || ''; siEl.focus(); }
   } else if (m.name === 'conversationLoaded') {
     var ov3 = el('cc-history-overlay');
     if (ov3) ov3.remove();
