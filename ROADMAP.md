@@ -44,7 +44,8 @@ Current state and direction of **Joplin Aide**, an AI assistant chat panel for J
 
 - [ ] Memory helpers: one-click "consolidate now", memory viewer entry in the panel
 - [ ] Prompt presets (per-task system prompt snippets)
-- [ ] More backends as their CLIs mature (e.g. Gemini)
+- [ ] **OpenAI Codex CLI backend** — headless story is ready (`codex exec --json` JSONL events, `exec resume`, MCP via config.toml); needs an isolated CODEX_HOME and a look at non-interactive MCP approvals
+- [ ] **Google Antigravity CLI backend** (watching) — Google retires the hosted Gemini CLI for consumer tiers on 2026-06-18 in favor of Antigravity CLI; evaluate once its headless/JSON/MCP interface stabilizes
 - [ ] Per-conversation model override
 
 No dates promised — items move up when they prove useful.

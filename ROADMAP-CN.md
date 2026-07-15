@@ -44,7 +44,8 @@
 
 - [ ] 记忆辅助：一键"立即整理"、面板内查看记忆入口
 - [ ] 提示词预设（按任务类型的系统提示片段）
-- [ ] 更多后端（如 Gemini，等其 CLI 成熟）
+- [ ] **OpenAI Codex CLI 后端** —— headless 条件已成熟（`codex exec --json` JSONL 事件流、`exec resume` 续接、MCP 走 config.toml）；需隔离 CODEX_HOME 并评估非交互 MCP 放行
+- [ ] **Google Antigravity CLI 后端**（观察中）—— Google 将于 2026-06-18 对消费级账户停用托管版 Gemini CLI、迁移至 Antigravity CLI；待其 headless/JSON/MCP 接口稳定后评估
 - [ ] 按会话覆盖模型
 
 不承诺时间——哪个被证明有用就先做哪个。
