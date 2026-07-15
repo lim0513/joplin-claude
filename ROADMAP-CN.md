@@ -43,6 +43,18 @@
 
 ---
 
+## 📌 说明：Joplin 内置 AI（3.7+）
+
+Joplin 3.7 预发布加入了官方 AI：`joplin.ai.chat()` provider 抽象、向量索引、
+基于 Web Clipper 端口的内置 **MCP server**，以及**带工具的 AI 侧栏**（agent
+循环 + 会话/工作区/插件三层工具）。这与 Aide 有重叠，值得持续关注——但定位仍
+错开：官方侧栏是自带 API key（按 token 计费、作用域限于当前笔记），而 Aide 跑
+在 Claude Code / Copilot 的 **CLI 订阅**上，带完整 agentic 循环、写操作确认、
+长期记忆和历史。官方这套对我们更多是机会（新后端、工具注册接口、也许能退役
+自建 MCP 代理）而非威胁。完整评估见 `docs/joplin-ai-assessment.md`。
+
+---
+
 ## 🧭 想法 / 以后
 
 - [ ] 记忆辅助：一键"立即整理"、面板内查看记忆入口

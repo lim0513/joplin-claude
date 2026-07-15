@@ -49,6 +49,23 @@ Current state and direction of **Joplin Aide**, an AI assistant chat panel for J
 - [ ] Prompt presets (per-task system prompt snippets)
 - [ ] **OpenAI Codex CLI backend** — headless story is ready (`codex exec --json` JSONL events, `exec resume`, MCP via config.toml); needs an isolated CODEX_HOME and a look at non-interactive MCP approvals
 - [ ] **Google Antigravity CLI backend** (watching) — Google retires the hosted Gemini CLI for consumer tiers on 2026-06-18 in favor of Antigravity CLI; evaluate once its headless/JSON/MCP interface stabilizes
+- [ ] **`joplin.ai.chat()` backend** — Joplin 3.7 adds a built-in provider abstraction (OpenAI-compatible / Anthropic / Joplin Cloud, keys in settings). A fourth Aide backend on top of it would serve users who run no CLI at all (incl. local Ollama), reusing their configured provider. Note the v1 primitive is single-shot text with no tool-calling, so Aide's agent loop + note tools would still run our side
+- [ ] **Register Aide's tools with the official MCP server / `joplin.ai.tools.register()`** — 3.7 ships a built-in MCP server and (in the sidebar spec) a `joplin.ai.tools.register()` plugin seam. Evaluate exposing Aide's note operations there, and whether our own MCP stdio proxy can be retired once Joplin's HTTP MCP endpoint is stable
 - [ ] Per-conversation model override
 
 No dates promised — items move up when they prove useful.
+
+---
+
+## 📌 Note: Joplin's built-in AI (3.7+)
+
+Joplin 3.7 pre-release adds first-party AI: a `joplin.ai.chat()` provider
+abstraction, an embeddings index, a built-in HTTP **MCP server** on the Web
+Clipper port, and a **tool-using AI sidebar** (agent loop, session + workspace +
+plugin-registered tools). This overlaps Aide's space, so worth tracking
+deliberately — but the positioning stays distinct: Joplin's sidebar is
+BYO-API-key (per-token billing, editor-scoped) whereas Aide runs on the
+Claude Code / Copilot **CLI subscriptions** with a full agentic loop, write
+confirmations, long-term memory and history. The official work is more an
+opportunity (new backend, tool-registration seam, possibly retiring our MCP
+proxy) than a threat. See `docs/joplin-ai-assessment.md` for the full read.
